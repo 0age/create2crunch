@@ -8,8 +8,8 @@ Provide three arguments: a factory address (or contract that will call CREATE2),
 $ git clone https://github.com/0age/create2crunch
 $ cd create2crunch
 $ cargo run --release \
-  0xfe55836c5e9510ac58c8f8adc78fa6ddd03cdcd0 `factory address` \
-  0x0734d56da60852a03e2aafae8a36ffd8c12b32f1 `caller address` \
+  0xfe55836c5e9510ac58c8f8adc78fa6ddd03cdcd0 `#factory address` \
+  0x0734d56da60852a03e2aafae8a36ffd8c12b32f1 `#caller address` \
   0x6336b407593e680555d2a5b24b983249db9db012dd5f1e1f589c916ffc609567 # init code
 ```
 
