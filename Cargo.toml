@@ -6,6 +6,7 @@ authors = ["0age <0age@protonmail.com"]
 [dependencies]
 fs2 = "0.4.3"
 hex = "0.3.2"
+itertools = "0.8.0"
 rand = "0.3"
 rayon = "1.0"
 tiny-keccak = "1.4.2"
