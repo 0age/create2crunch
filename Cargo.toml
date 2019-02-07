@@ -1,12 +1,18 @@
 [package]
 name = "create2crunch"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["0age <0age@protonmail.com"]
 
 [dependencies]
+byteorder = "1"
+console = "0.7.5"
 fs2 = "0.4.3"
 hex = "0.3.2"
 itertools = "0.8.0"
+ocl = "0.19"
+ocl-extras = "0.1.1"
 rand = "0.3"
 rayon = "1.0"
+separator = "0.3.1"
+terminal_size = "0.1.8"
 tiny-keccak = "1.4.2"

@@ -9,19 +9,25 @@ count_checkpoint = None
 total_checkpoint = None
 iterations = 0
 
+def get_score(row):
+    try:
+        return int(row[116:])
+    except ValueError:
+        return 0
+
 while True:
     print(f'\n\n\nruntime: {round((time.time() - checkpoint) / 60, 2)} minutes')
 
     with open('./efficient_addresses.txt') as f:
         content = f.readlines()
 
-    d = [int(i[116:]) for i in content]
+    d = [get_score(i) for i in content]
 
     if d_checkpoint is None:
         d_checkpoint = len(d)
 
     d_change = len(d) - d_checkpoint
-    
+
     if (iterations != 0):
         d_iterations = round(d_change/(iterations * interval_seconds), 4)
         print(
@@ -74,7 +80,10 @@ while True:
     print('total submission rewards by %:')
     for i in range(max(d) + 1):
       if i in r:
-        ratio = r[i] / total
+        try:
+            ratio = r[i] / total
+        except ZeroDivisionError:
+            ratio = 0
         print(f' * {str(i).rjust(longest)}: {round(ratio * 10000) / 100}%')
 
     most_valuable_index = d.index(max(d))
