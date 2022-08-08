@@ -32,7 +32,7 @@ use terminal_size::{Width, Height, terminal_size};
 use tiny_keccak::Keccak;
 
 // workset size (tweak this!)
-const WORK_SIZE: usize = 0x4000000; // max. 0x15400000 to abs. max 0xffffffff
+const WORK_SIZE: usize = 0x40000000; // max. 0x15400000 to abs. max 0xffffffff
 
 const INTERVAL: u64 = 0x100000000;
 const WORK_FACTOR: u128 = (WORK_SIZE as u128) / 1_000_000;
