@@ -518,7 +518,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                               .build()?;
 
         // reset nonce at zero & create a buffer to view it in little-endian
-        let mut nonce: [u64; 1] = [0];
+        let mut nonce: [u64; 1] = [rng.next_u64() & 0xffffffff00000000];
         let mut view_buf = [0; 8];
 
         // build a corresponding buffer for passing the nonce to the kernel
@@ -653,7 +653,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             }
 
             // if no solution has yet been found, increment the nonce
-            nonce[0] += INTERVAL as u64;
+            nonce[0] = (nonce[0] + (INTERVAL as u64)) & 0xffffffff00000000;
 
             // update the nonce buffer with the incremented nonce value
             nonce_buffer = Buffer::builder()
