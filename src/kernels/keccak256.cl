@@ -50,7 +50,6 @@ typedef union _nonce_t
 #if PLATFORM == OPENCL_PLATFORM_AMD
 static inline ulong rol(const ulong x, const uint s)
 {
-
   uint2 output;
   uint2 x2 = as_uint2(x);
 
@@ -58,7 +57,7 @@ static inline ulong rol(const ulong x, const uint s)
   return as_ulong(output);
 }
 #else
-#define rol(x, s) (((x) << s) | ((x) >> (64u - s)));
+#define rol(x, s) (((x) << s) | ((x) >> (64u - s)))
 #endif
 
 #if PLATFORM == OPENCL_PLATFORM_AMD
@@ -71,7 +70,7 @@ static inline ulong rol1(const ulong x)
   return as_ulong(output);
 }
 #else
-#define rol1(x) rol(x, 1u)
+#define rol1(x) (((x) << 1u) | ((x) >> (63u)))
 #endif
 
 static inline void keccakf(ulong *a)
@@ -4610,6 +4609,7 @@ __kernel void hashMessage(
 
   nonce_t nonce;
 
+  // write the control character
   sponge[0] = 0xffu;
 
   sponge[1] = S_1;
@@ -4730,6 +4730,10 @@ __kernel void hashMessage(
     || hasTotal(digest)
 #endif
   ) {
+    // To be honest, if we are using OpenCL, 
+    // we just need to write one solution for all practical purposes,
+    // since the chance of multiple solutions appearing
+    // in a single workset is extremely low.
     solutions[0] = nonce.uint64_t;
   }
 }
