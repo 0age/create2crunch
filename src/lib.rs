@@ -32,7 +32,7 @@ use terminal_size::{Width, Height, terminal_size};
 use tiny_keccak::Keccak;
 
 // workset size (tweak this!)
-const WORK_SIZE: usize = 0x15400000; // max. 0x15400000 to abs. max 0xffffffff
+const WORK_SIZE: usize = 0x4000000; // max. 0x15400000 to abs. max 0xffffffff
 
 const INTERVAL: u64 = 0x100000000;
 const WORK_FACTOR: u128 = (WORK_SIZE as u128) / 1_000_000;
@@ -191,7 +191,11 @@ impl Config {
         };
 
         if leading_zeroes_threshold > 20 {
-            return Err("invalid value for leading zeroes threshold argument.")
+            return Err("invalid value for leading zeroes threshold argument. (valid: 0 .. 20)")
+        }
+
+        if total_zeroes_threshold > 20 && total_zeroes_threshold != 255  {
+            return Err("invalid value for total zeroes threshold argument. (valid: 0 .. 20, 255)")
         }
 
         // return the config object
@@ -452,6 +456,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     let caller: [u8; 20] = config.calling_address;
     let init_hash: [u8; 32] = config.init_code_hash;
 
+    // generate the kernel source code with the define macros
     let kernel_src = &format!(
         "{}\n{}\n{}\n#define LEADING_ZEROES {}\n#define TOTAL_ZEROES {}\n{}",
         factory
@@ -478,7 +483,6 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     let program = Program::builder()
                     .devices(device)
                     .src(kernel_src)
-                    .cmplr_opt("-cl-fast-relaxed-math -cl-mad-enable")
                     .build(&context)?;
 
     // set up the queue to use
@@ -517,7 +521,8 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                                .copy_host_slice(&message)
                                .build()?;
 
-        // reset nonce at zero & create a buffer to view it in little-endian
+        // reset nonce & create a buffer to view it in little-endian
+        // for more uniformly distributed nonces, we shall initialize it to a random value
         let mut nonce: [u64; 1] = [rng.next_u64() & 0xffffffff00000000];
         let mut view_buf = [0; 8];
 
@@ -538,85 +543,96 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                                               .copy_host_slice(&solutions)
                                               .build()?;
 
+        let mut previous_time: f64 = SystemTime::now()
+                                  .duration_since(UNIX_EPOCH)
+                                  .unwrap()
+                                  .as_secs() as f64;
+
         // repeatedly enqueue kernel to search for new addresses
         loop {
-            // clear the terminal screen
-            term.clear_screen()?;
-
             // calculate the current time
             let current_time: f64 = SystemTime::now()
                                       .duration_since(UNIX_EPOCH)
                                       .unwrap()
                                       .as_secs() as f64;
 
-            // get the total runtime and parse into hours : minutes : seconds
-            let total_runtime = current_time - start_time;
-            let total_runtime_hrs = *&total_runtime as u64 / (3600);
-            let total_runtime_mins = (
-              *&total_runtime as u64 - &total_runtime_hrs * 3600
-            ) / 60;
-            let total_runtime_secs = &total_runtime - (
-              &total_runtime_hrs * 3600
-            ) as f64 - (&total_runtime_mins * 60) as f64;
+            // we don't want to print too fast
+            let print_output: bool = current_time - previous_time > 0.99;
+            previous_time = current_time;
 
-            // determine the number of attempts being made per second
-            let work_rate: u128 = WORK_FACTOR * cumulative_nonce as u128;
-            if total_runtime > 0.0 {
-                rate = 1.0 / total_runtime;
+            // clear the terminal screen
+            if print_output {
+                term.clear_screen()?;
+
+                // get the total runtime and parse into hours : minutes : seconds
+                let total_runtime = current_time - start_time;
+                let total_runtime_hrs = *&total_runtime as u64 / (3600);
+                let total_runtime_mins = (
+                  *&total_runtime as u64 - &total_runtime_hrs * 3600
+                ) / 60;
+                let total_runtime_secs = &total_runtime - (
+                  &total_runtime_hrs * 3600
+                ) as f64 - (&total_runtime_mins * 60) as f64;
+
+                // determine the number of attempts being made per second
+                let work_rate: u128 = WORK_FACTOR * cumulative_nonce as u128;
+                if total_runtime > 0.0 {
+                    rate = 1.0 / total_runtime;
+                }
+
+                // fill the buffer for viewing the properly-formatted nonce
+                LittleEndian::write_u64(&mut view_buf, nonce[0]);
+
+
+                // calculate the terminal height, defaulting to a height of ten rows
+                let size = terminal_size();
+                let height: u16;
+                if let Some((Width(_w), Height(h))) = size {
+                    height = h;
+                } else {
+                    height = 10;
+                }
+
+                // display information about the total runtime and work size
+                term.write_line(&format!(
+                  "total runtime: {}:{:02}:{:02} ({} cycles)\t\t\t\
+                  work size per cycle: {}",
+                  total_runtime_hrs,
+                  total_runtime_mins,
+                  total_runtime_secs,
+                  cumulative_nonce,
+                  WORK_SIZE.separated_string()
+                ))?;    
+
+                // display information about the attempt rate and found solutions
+                term.write_line(&format!(
+                  "rate: {:.2} million attempts per second\t\t\t\
+                  total found this run: {}",
+                  work_rate as f64 * rate,
+                  &found
+                ))?;    
+                // display information about the current search criteria
+                term.write_line(&format!(
+                  "current search space: {}xxxxxxxx{:08x}\t\t\
+                  threshold: {} leading or {} total zeroes",
+                  hex::encode(&salt),
+                  BigEndian::read_u64(&view_buf),
+                  config.leading_zeroes_threshold,
+                  config.total_zeroes_threshold
+                ))?;
+
+                // display recently found solutions based on terminal height
+                let rows: usize = if height < 5 { 1 } else { (height - 4) as usize };
+                let last_rows: Vec<String> = found_list
+                                               .iter()
+                                               .cloned()
+                                               .rev()
+                                               .take(rows)
+                                               .collect();
+                let ordered: Vec<String> = last_rows.iter().cloned().rev().collect();
+                let recently_found = &ordered.join("\n");
+                term.write_line(&recently_found)?;
             }
-
-            // fill the buffer for viewing the properly-formatted nonce
-            LittleEndian::write_u64(&mut view_buf, nonce[0]);
-
-            // calculate the terminal height, defaulting to a height of ten rows
-            let size = terminal_size();
-            let height: u16;
-            if let Some((Width(_w), Height(h))) = size {
-                height = h;
-            } else {
-                height = 10;
-            }
-
-            // display information about the total runtime and work size
-            term.write_line(&format!(
-              "total runtime: {}:{:02}:{:02} ({} cycles)\t\t\t\
-              work size per cycle: {}",
-              total_runtime_hrs,
-              total_runtime_mins,
-              total_runtime_secs,
-              cumulative_nonce,
-              WORK_SIZE.separated_string()
-            ))?;
-
-            // display information about the attempt rate and found solutions
-            term.write_line(&format!(
-              "rate: {:.2} million attempts per second\t\t\t\
-              total found this run: {}",
-              work_rate as f64 * rate,
-              &found
-            ))?;
-
-            // display information about the current search criteria
-            term.write_line(&format!(
-              "current search space: {}xxxxxxxx{:08x}\t\t\
-              threshold: {} leading or {} total zeroes",
-              hex::encode(&salt),
-              BigEndian::read_u64(&view_buf),
-              config.leading_zeroes_threshold,
-              config.total_zeroes_threshold
-            ))?;
-
-            // display recently found solutions based on terminal height
-            let rows: usize = if height < 5 { 1 } else { (height - 4) as usize };
-            let last_rows: Vec<String> = found_list
-                                           .iter()
-                                           .cloned()
-                                           .rev()
-                                           .take(rows)
-                                           .collect();
-            let ordered: Vec<String> = last_rows.iter().cloned().rev().collect();
-            let recently_found = &ordered.join("\n");
-            term.write_line(&recently_found)?;
 
             // build the kernel and define the type of each buffer
             let kern = ocl_pq.kernel_builder("hashMessage")
