@@ -194,10 +194,6 @@ impl Config {
             return Err("invalid value for leading zeroes threshold argument.")
         }
 
-        if total_zeroes_threshold > 20 {
-            return Err("invalid value for total zeroes threshold argument.")
-        }
-
         // return the config object
         Ok(
           Self {
@@ -450,11 +446,172 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                     .platform(platform)
                     .devices(device.clone())
                     .build()?;
+    
+    // get factory, caller, and initialization code hash from config object
+    let factory: [u8; 20] = config.factory_address;
+    let caller: [u8; 20] = config.calling_address;
+    let init_hash: [u8; 32] = config.init_code_hash;
+
+    let kernel_src = &format!(
+        concat!(
+            "#define S_1 {}u\n",
+            "#define S_2 {}u\n",
+            "#define S_3 {}u\n",
+            "#define S_4 {}u\n",
+            "#define S_5 {}u\n",
+            "#define S_6 {}u\n",
+            "#define S_7 {}u\n",
+            "#define S_8 {}u\n",
+            "#define S_9 {}u\n",
+            "#define S_10 {}u\n",
+            "#define S_11 {}u\n",
+            "#define S_12 {}u\n",
+            "#define S_13 {}u\n",
+            "#define S_14 {}u\n",
+            "#define S_15 {}u\n",
+            "#define S_16 {}u\n",
+            "#define S_17 {}u\n",
+            "#define S_18 {}u\n",
+            "#define S_19 {}u\n",
+            "#define S_20 {}u\n",
+            "#define S_21 {}u\n",
+            "#define S_22 {}u\n",
+            "#define S_23 {}u\n",
+            "#define S_24 {}u\n",
+            "#define S_25 {}u\n",
+            "#define S_26 {}u\n",
+            "#define S_27 {}u\n",
+            "#define S_28 {}u\n",
+            "#define S_29 {}u\n",
+            "#define S_30 {}u\n",
+            "#define S_31 {}u\n",
+            "#define S_32 {}u\n",
+            "#define S_33 {}u\n",
+            "#define S_34 {}u\n",
+            "#define S_35 {}u\n",
+            "#define S_36 {}u\n",
+            "#define S_37 {}u\n",
+            "#define S_38 {}u\n",
+            "#define S_39 {}u\n",
+            "#define S_40 {}u\n",
+            "#define S_53 {}u\n",
+            "#define S_54 {}u\n",
+            "#define S_55 {}u\n",
+            "#define S_56 {}u\n",
+            "#define S_57 {}u\n",
+            "#define S_58 {}u\n",
+            "#define S_59 {}u\n",
+            "#define S_60 {}u\n",
+            "#define S_61 {}u\n",
+            "#define S_62 {}u\n",
+            "#define S_63 {}u\n",
+            "#define S_64 {}u\n",
+            "#define S_65 {}u\n",
+            "#define S_66 {}u\n",
+            "#define S_67 {}u\n",
+            "#define S_68 {}u\n",
+            "#define S_69 {}u\n",
+            "#define S_70 {}u\n",
+            "#define S_71 {}u\n",
+            "#define S_72 {}u\n",
+            "#define S_73 {}u\n",
+            "#define S_74 {}u\n",
+            "#define S_75 {}u\n",
+            "#define S_76 {}u\n",
+            "#define S_77 {}u\n",
+            "#define S_78 {}u\n",
+            "#define S_79 {}u\n",
+            "#define S_80 {}u\n",
+            "#define S_81 {}u\n",
+            "#define S_82 {}u\n",
+            "#define S_83 {}u\n",
+            "#define S_84 {}u\n",
+            "#define LEADING_ZEROES {}\n", 
+            "#define TOTAL_ZEROES {}\n", 
+            "{}"
+        ),
+        factory[0], 
+        factory[1], 
+        factory[2], 
+        factory[3], 
+        factory[4], 
+        factory[5], 
+        factory[6], 
+        factory[7], 
+        factory[8], 
+        factory[9], 
+        factory[10], 
+        factory[11], 
+        factory[12], 
+        factory[13], 
+        factory[14], 
+        factory[15], 
+        factory[16], 
+        factory[17], 
+        factory[18], 
+        factory[19], 
+        caller[0], 
+        caller[1], 
+        caller[2], 
+        caller[3], 
+        caller[4], 
+        caller[5], 
+        caller[6], 
+        caller[7], 
+        caller[8], 
+        caller[9], 
+        caller[10], 
+        caller[11], 
+        caller[12], 
+        caller[13], 
+        caller[14], 
+        caller[15], 
+        caller[16], 
+        caller[17], 
+        caller[18], 
+        caller[19],
+        init_hash[0],
+        init_hash[1],
+        init_hash[2],
+        init_hash[3],
+        init_hash[4],
+        init_hash[5],
+        init_hash[6],
+        init_hash[7],
+        init_hash[8],
+        init_hash[9],
+        init_hash[10],
+        init_hash[11],
+        init_hash[12],
+        init_hash[13],
+        init_hash[14],
+        init_hash[15],
+        init_hash[16],
+        init_hash[17],
+        init_hash[18],
+        init_hash[19],
+        init_hash[20],
+        init_hash[21],
+        init_hash[22],
+        init_hash[23],
+        init_hash[24],
+        init_hash[25],
+        init_hash[26],
+        init_hash[27],
+        init_hash[28],
+        init_hash[29],
+        init_hash[30],
+        init_hash[31],
+        config.leading_zeroes_threshold,
+        config.total_zeroes_threshold,
+        KERNEL_SRC
+    );
 
     // set up the program to use
     let program = Program::builder()
                     .devices(device)
-                    .src(KERNEL_SRC)
+                    .src(kernel_src)
+                    .cmplr_opt("-cl-fast-relaxed-math -cl-mad-enable")
                     .build(&context)?;
 
     // set up the queue to use
@@ -466,10 +623,6 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     // create a random number generator
     let mut rng = thread_rng();
 
-    // get factory, caller, and initialization code hash from config object
-    let factory: [u8; 20] = config.factory_address;
-    let caller: [u8; 20] = config.calling_address;
-    let init_hash: [u8; 32] = config.init_code_hash;
 
     // determine the start time
     let start_time: f64 = SystemTime::now()
@@ -486,36 +639,16 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
         // create a random 4-byte salt using the random number generator
         let salt = rng.gen_iter::<u8>().take(4).collect::<Vec<u8>>();
 
-        // construct the 85-byte message to hash, leaving last 8 of salt empty
-        let mut message_vec: Vec<u8> = vec![CONTROL_CHARACTER];
-        message_vec.extend(factory.iter());
-        message_vec.extend(caller.iter());
-        message_vec.extend(&salt);
-        message_vec.extend(EIGHT_ZERO_BYTES.iter());
-        message_vec.extend(init_hash.iter());
-        let message: [u8; 85] = to_fixed_85(&message_vec);
+        // construct the 4-byte message to hash, leaving last 8 of salt empty
+        let message: [u8; 4] = to_fixed_4(&salt);
 
         // build a corresponding buffer for passing the message to the kernel
         let message_buffer = Buffer::builder()
                                .queue(ocl_pq.queue().clone())
                                .flags(MemFlags::new().read_only())
-                               .len(85)
+                               .len(4)
                                .copy_host_slice(&message)
                                .build()?;
-
-        // set the targets for leading and total zeroes from config object
-        let target: [u8; 2] = [
-          config.leading_zeroes_threshold,
-          config.total_zeroes_threshold
-        ];
-
-        // build a corresponding buffer for passing the targets to the kernel
-        let target_buffer = Buffer::builder()
-                              .queue(ocl_pq.queue().clone())
-                              .flags(MemFlags::new().read_only())
-                              .len(2)
-                              .copy_host_slice(&target)
-                              .build()?;
 
         // reset nonce at zero & create a buffer to view it in little-endian
         let mut nonce: [u64; 1] = [rng.next_u64() & 0xffffffff00000000];
@@ -530,17 +663,13 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                                  .build()?;
 
         // establish a buffer for nonces that result in desired addresses
-        let mut solutions: Vec<u64> = vec![0; 256];
+        let mut solutions: Vec<u64> = vec![0; 1];
         let solutions_buffer: Buffer<u64> = Buffer::builder()
                                               .queue(ocl_pq.queue().clone())
                                               .flags(MemFlags::new().write_only())
-                                              .len(256)
+                                              .len(1)
                                               .copy_host_slice(&solutions)
                                               .build()?;
-
-        // establish a buffer for counting solutions - return when one is found
-        let mut solution_count: Vec<u32> = vec![0];
-        let solution_count_buffer: Buffer<u32> = ocl_pq.create_buffer()?;
 
         // repeatedly enqueue kernel to search for new addresses
         loop {
@@ -606,8 +735,8 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
               threshold: {} leading or {} total zeroes",
               hex::encode(&salt),
               BigEndian::read_u64(&view_buf),
-              target[0],
-              target[1]
+              config.leading_zeroes_threshold,
+              config.total_zeroes_threshold
             ))?;
 
             // display recently found solutions based on terminal height
@@ -625,18 +754,14 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             // build the kernel and define the type of each buffer
             let kern = ocl_pq.kernel_builder("hashMessage")
                          .arg_named("message", None::<&Buffer<u8>>)
-                         .arg_named("target", None::<&Buffer<u8>>)
                          .arg_named("nonce", None::<&Buffer<u64>>)
                          .arg_named("solutions", None::<&Buffer<u64>>)
-                         .arg_named("solutionCount", None::<&Buffer<u32>>)
                          .build()?;
 
             // set each buffer
             kern.set_arg("message", Some(&message_buffer))?;
-            kern.set_arg("target", Some(&target_buffer))?;
             kern.set_arg("nonce", Some(&nonce_buffer))?;
             kern.set_arg("solutions", &solutions_buffer)?;
-            kern.set_arg("solutionCount", &solution_count_buffer)?;
 
             // enqueue the kernel
             unsafe { kern.enq()?; }
@@ -644,11 +769,11 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             // increment the cumulative nonce (does not reset after a match)
             cumulative_nonce += 1;
 
-            // read the number of solutions from the device
-            solution_count_buffer.read(&mut solution_count).enq()?;
+            // read the solutions from the device
+            solutions_buffer.read(&mut solutions).enq()?;
 
             // if at least one solution is found, end the loop
-            if solution_count[0] != 0 {
+            if solutions[0] != 0 {
                 break;
             }
 
@@ -663,9 +788,6 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                              .copy_host_slice(&nonce)
                              .build()?;
         }
-
-        // read the located solutions from the device
-        solutions_buffer.read(&mut solutions).enq()?;
 
         // iterate over each solution, first converting to a fixed array
         solutions
@@ -825,9 +947,9 @@ fn to_fixed_47(bytes: &std::vec::Vec<u8>) -> [u8; 47] {
     array
 }
 
-/// Convert a properly-sized vector to a fixed array of 85 bytes.
-fn to_fixed_85(bytes: &std::vec::Vec<u8>) -> [u8; 85] {
-    let mut array = [0; 85];
+/// Convert a properly-sized vector to a fixed array of 4 bytes.
+fn to_fixed_4(bytes: &std::vec::Vec<u8>) -> [u8; 4] {
+    let mut array = [0; 4];
     let bytes = &bytes[..array.len()];
     array.copy_from_slice(bytes);
     array

@@ -41,65 +41,42 @@
 # pragma OPENCL EXTENSION   cl_amd_media_ops : enable
 #endif
 
-#define CONTROL_CHAR_LENGTH  1u
-#define UINT32_LENGTH        4u
-#define UINT64_LENGTH        8u
-#define UINT96_LENGTH       12u
-#define UINT160_LENGTH      20u
-#define UINT256_LENGTH      32u
-#define NONCE_START         45u
-#define NONCE_END           53u
-#define MESSAGE_LENGTH      85u
-#define START_PADDING       86u
-#define END_PADDING        135u
-#define START_FINAL        136u
-#define SPONGE_LENGTH      200u
-#define MAX_SOLUTIONS      256u
-
 typedef union _nonce_t
 {
   ulong   uint64_t;
-  uchar   uint8_t[UINT64_LENGTH];
+  uchar   uint8_t[8];
 } nonce_t;
 
+#if PLATFORM == OPENCL_PLATFORM_AMD
 static inline ulong rol(const ulong x, const uint s)
 {
-#if PLATFORM == OPENCL_PLATFORM_AMD
 
   uint2 output;
   uint2 x2 = as_uint2(x);
 
   output = (s > 32u) ? amd_bitalign((x2).yx, (x2).xy, 64u - s) : amd_bitalign((x2).xy, (x2).yx, 32u - s);
   return as_ulong(output);
-
-#else
-
-  return (((x) << s) | ((x) >> (64u - s)));
-
-#endif
 }
+#else
+#define rol(x, s) rotate((ulong)(x), (ulong)(s))
+#endif
 
+#if PLATFORM == OPENCL_PLATFORM_AMD
 static inline ulong rol1(const ulong x)
 {
-#if PLATFORM == OPENCL_PLATFORM_AMD
-
   uint2 output;
   uint2 x2 = as_uint2(x);
 
   output = amd_bitalign((x2).xy, (x2).yx, 31u);
   return as_ulong(output);
-
-#else
-
-  return (((x) << 1u) | ((x) >> (63u)));
-
-#endif
 }
+#else
+#define rol1(x) rotate((ulong)(x), (ulong)(1))
+#endif
 
-static inline void keccakf(void *state)
+static inline void keccakf(ulong *a)
 {
-  ulong *a = (ulong *)state;
-  ulong b[5] = { 0, 0, 0, 0, 0 };
+  ulong b[5];
   ulong t;
 
   // iteration 1
@@ -4596,118 +4573,163 @@ static inline void keccakf(void *state)
   a[3] ^= ((~a[4]) & a[0]);
 }
 
-static inline void keccak256(uchar *digest, uchar const *message)
+#define hasTotal(digest) ( \
+  (digest[0] == 0x00) + (digest[1] == 0x00) + (digest[2] == 0x00) + (digest[3] == 0x00) + \
+  (digest[4] == 0x00) + (digest[5] == 0x00) + (digest[6] == 0x00) + (digest[7] == 0x00) + \
+  (digest[8] == 0x00) + (digest[9] == 0x00) + (digest[10] == 0x00) + (digest[11] == 0x00) + \
+  (digest[12] == 0x00) + (digest[13] == 0x00) + (digest[14] == 0x00) + (digest[15] == 0x00) + \
+  (digest[16] == 0x00) + (digest[17] == 0x00) + (digest[18] == 0x00) + (digest[19] == 0x00) \
+>= TOTAL_ZEROES)
+
+#if LEADING_ZEROES == 6
+#define hasLeading(left) ((((uint*)left)[0] | left[4] | left[5]) == 0)
+#elif LEADING_ZEROES == 5
+#define hasLeading(left) ((((uint*)left)[0] | left[4]) == 0)
+#elif LEADING_ZEROES == 4
+#define hasLeading(left) (((uint*)left)[0] == 0)
+#else
+static inline bool hasLeading(uchar const *left)
 {
-  // declare the sponge
-  uchar sponge[SPONGE_LENGTH];
-
-  // populate the initial message at the start of the sponge state
-# pragma unroll
-  for (uchar i = 0; i < MESSAGE_LENGTH; ++i)
-    sponge[i] = message[i];
-
-  // begin padding based on message length
-  sponge[MESSAGE_LENGTH] = 0x01u;
-
-  // fill padding
-# pragma unroll
-  for (uchar i = START_PADDING; i < END_PADDING; ++i)
-    sponge[i] = 0;
-
-  // end padding
-  sponge[END_PADDING] = 0x80u;
-
-  // fill remaining sponge state with zeroes
-# pragma unroll
-  for (uchar i = START_FINAL; i < SPONGE_LENGTH; ++i)
-    sponge[i] = 0;
-
-  // Apply keccakf
-  keccakf(sponge);
-
-  // trim the first 12 bytes from the digest
-# pragma unroll
-  for (uchar i = 0; i < UINT160_LENGTH; ++i)
-    digest[i] = sponge[i + UINT96_LENGTH];
-}
-
-static inline bool hasTotal(
-  uchar const one, uchar const two, uchar const three, uchar const four,
-  uchar const five, uchar const six, uchar const seven, uchar const eight,
-  uchar const nine, uchar const ten, uchar const eleven, uchar const twelve,
-  uchar const thirteen, uchar const fourteen, uchar const fifteen,
-  uchar const sixteen, uchar const seventeen, uchar const eighteen,
-  uchar const nineteen, uchar const twenty, __constant uchar const *leading
-) {
-  return (
-    (
-      (one == 0x00) + (two == 0x00) + (three == 0x00) + (four == 0x00) +
-      (five == 0x00) + (six == 0x00) + (seven == 0x00) + (eight == 0x00) +
-      (nine == 0x00) + (ten == 0x00) + (eleven == 0x00) + (twelve == 0x00) +
-      (thirteen == 0x00) + (fourteen == 0x00) + (fifteen == 0x00) +
-      (sixteen == 0x00) + (seventeen == 0x00) + (eighteen == 0x00) +
-      (nineteen == 0x00) + (twenty == 0x00)
-    ) >= leading[1]
-  );
-}
-
-static inline bool hasLeading(uchar const *left, __constant uchar const *leading)
-{
-  for (uchar i = 0; i < leading[0]; ++i)
-  {
+  for (int i = 0; i < LEADING_ZEROES; ++i) {
     if (left[i] != 0) return false;
   }
   return true;
 }
+#endif
 
 __kernel void hashMessage(
   __constant uchar const *d_message,
-  __constant uchar const *d_target,
   __constant ulong const *d_nonce,
-  __global volatile ulong *restrict solutions,
-  __global volatile uint *solutionCount
+  __global volatile ulong *restrict solutions
 ) {
-  // declare the message, digest, and nonce
-  uchar message[MESSAGE_LENGTH];
-  uchar digest[UINT160_LENGTH];
+  
+  ulong spongeBuffer[25];
+
+#define sponge ((uchar *) spongeBuffer)
+#define digest (sponge + 12)
+
   nonce_t nonce;
 
-  // populate the header of the message
-# pragma unroll
-  for (uchar i = 0; i < NONCE_START; ++i)
-    message[i] = d_message[i];
+  sponge[0] = 0xffu;
+
+  sponge[1] = S_1;
+  sponge[2] = S_2;
+  sponge[3] = S_3;
+  sponge[4] = S_4;
+  sponge[5] = S_5;
+  sponge[6] = S_6;
+  sponge[7] = S_7;
+  sponge[8] = S_8;
+  sponge[9] = S_9;
+  sponge[10] = S_10;
+  sponge[11] = S_11;
+  sponge[12] = S_12;
+  sponge[13] = S_13;
+  sponge[14] = S_14;
+  sponge[15] = S_15;
+  sponge[16] = S_16;
+  sponge[17] = S_17;
+  sponge[18] = S_18;
+  sponge[19] = S_19;
+  sponge[20] = S_20;
+  sponge[21] = S_21;
+  sponge[22] = S_22;
+  sponge[23] = S_23;
+  sponge[24] = S_24;
+  sponge[25] = S_25;
+  sponge[26] = S_26;
+  sponge[27] = S_27;
+  sponge[28] = S_28;
+  sponge[29] = S_29;
+  sponge[30] = S_30;
+  sponge[31] = S_31;
+  sponge[32] = S_32;
+  sponge[33] = S_33;
+  sponge[34] = S_34;
+  sponge[35] = S_35;
+  sponge[36] = S_36;
+  sponge[37] = S_37;
+  sponge[38] = S_38;
+  sponge[39] = S_39;
+  sponge[40] = S_40;
+
+  sponge[41] = d_message[0];
+  sponge[42] = d_message[1];
+  sponge[43] = d_message[2];
+  sponge[44] = d_message[3];
 
   // populate the nonce
   nonce.uint64_t = get_global_id(0) + d_nonce[0];
 
   // populate the body of the message with the nonce
-# pragma unroll
-  for (uchar i = 0; i < UINT64_LENGTH; ++i)
-    message[NONCE_START + i] = nonce.uint8_t[i];
+  sponge[45] = nonce.uint8_t[0];
+  sponge[46] = nonce.uint8_t[1];
+  sponge[47] = nonce.uint8_t[2];
+  sponge[48] = nonce.uint8_t[3];
+  sponge[49] = nonce.uint8_t[4];
+  sponge[50] = nonce.uint8_t[5];
+  sponge[51] = nonce.uint8_t[6];
+  sponge[52] = nonce.uint8_t[7];
 
-  // populate the footer of the message
-# pragma unroll
-  for (uchar i = NONCE_END; i < MESSAGE_LENGTH; ++i)
-    message[i] = d_message[i];
+  sponge[53] = S_53;
+  sponge[54] = S_54;
+  sponge[55] = S_55;
+  sponge[56] = S_56;
+  sponge[57] = S_57;
+  sponge[58] = S_58;
+  sponge[59] = S_59;
+  sponge[60] = S_60;
+  sponge[61] = S_61;
+  sponge[62] = S_62;
+  sponge[63] = S_63;
+  sponge[64] = S_64;
+  sponge[65] = S_65;
+  sponge[66] = S_66;
+  sponge[67] = S_67;
+  sponge[68] = S_68;
+  sponge[69] = S_69;
+  sponge[70] = S_70;
+  sponge[71] = S_71;
+  sponge[72] = S_72;
+  sponge[73] = S_73;
+  sponge[74] = S_74;
+  sponge[75] = S_75;
+  sponge[76] = S_76;
+  sponge[77] = S_77;
+  sponge[78] = S_78;
+  sponge[79] = S_79;
+  sponge[80] = S_80;
+  sponge[81] = S_81;
+  sponge[82] = S_82;
+  sponge[83] = S_83;
+  sponge[84] = S_84;
 
-  // calculate the resultant address
-  keccak256(digest, message);
+  // begin padding based on message length
+  sponge[85] = 0x01u;
+
+  // fill padding
+#pragma unroll
+  for (int i = 86; i < 135; ++i)
+    sponge[i] = 0;
+
+  // end padding
+  sponge[135] = 0x80u;
+
+  // fill remaining sponge state with zeroes
+#pragma unroll
+  for (int i = 136; i < 200; ++i)
+    sponge[i] = 0;
+
+  // Apply keccakf
+  keccakf(spongeBuffer);
 
   // determine if the address meets the constraints
-  if (hasLeading(digest, d_target) || hasTotal(
-    digest[0], digest[1], digest[2],
-    digest[3], digest[4], digest[5],
-    digest[6], digest[7], digest[8],
-    digest[9], digest[10], digest[11],
-    digest[12], digest[13], digest[14],
-    digest[15], digest[16], digest[17],
-    digest[18], digest[19], d_target))
-  {
-    if (solutionCount[0] < MAX_SOLUTIONS)
-    {
-      // add the nonce to the solutions buffer and increase the solution count
-      solutions[solutionCount[0]] = nonce.uint64_t;
-      ++solutionCount[0];
-    }
+  if (
+    hasLeading(digest) 
+#if TOTAL_ZEROES <= 20
+    || hasTotal(digest)
+#endif
+  ) {
+    solutions[0] = nonce.uint64_t;
   }
 }
