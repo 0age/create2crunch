@@ -58,7 +58,7 @@ static inline ulong rol(const ulong x, const uint s)
   return as_ulong(output);
 }
 #else
-#define rol(x, s) rotate((ulong)(x), (ulong)(s))
+#define rol(x, s) (((x) << s) | ((x) >> (64u - s)));
 #endif
 
 #if PLATFORM == OPENCL_PLATFORM_AMD
@@ -71,7 +71,7 @@ static inline ulong rol1(const ulong x)
   return as_ulong(output);
 }
 #else
-#define rol1(x) rotate((ulong)(x), (ulong)(1))
+#define rol1(x) rol(x, 1u)
 #endif
 
 static inline void keccakf(ulong *a)
