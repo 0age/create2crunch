@@ -191,11 +191,11 @@ impl Config {
         };
 
         if leading_zeroes_threshold > 20 {
-            return Err("invalid value for leading zeroes threshold argument.")
+            return Err("invalid value for leading zeroes threshold argument. (valid: 0 .. 20)")
         }
 
-        if total_zeroes_threshold > 20 {
-            return Err("invalid value for total zeroes threshold argument.")
+        if total_zeroes_threshold > 20 && total_zeroes_threshold != 255  {
+            return Err("invalid value for total zeroes threshold argument. (valid: 0 .. 20, 255)")
         }
 
         // return the config object
@@ -450,11 +450,39 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                     .platform(platform)
                     .devices(device.clone())
                     .build()?;
+    
+    // get factory, caller, and initialization code hash from config object
+    let factory: [u8; 20] = config.factory_address;
+    let caller: [u8; 20] = config.calling_address;
+    let init_hash: [u8; 32] = config.init_code_hash;
+
+    // generate the kernel source code with the define macros
+    let kernel_src = &format!(
+        "{}\n{}\n{}\n#define LEADING_ZEROES {}\n#define TOTAL_ZEROES {}\n{}",
+        factory
+            .iter()
+            .enumerate()
+            .map(|(i, x)| format!("#define S_{} {}u\n", i + 1, x))
+            .collect::<String>(),
+        caller
+            .iter()
+            .enumerate()
+            .map(|(i, x)| format!("#define S_{} {}u\n", i + 21, x))
+            .collect::<String>(),
+        init_hash
+            .iter()
+            .enumerate()
+            .map(|(i, x)| format!("#define S_{} {}u\n", i + 53, x))
+            .collect::<String>(),
+        config.leading_zeroes_threshold,
+        config.total_zeroes_threshold,
+        KERNEL_SRC
+    );
 
     // set up the program to use
     let program = Program::builder()
                     .devices(device)
-                    .src(KERNEL_SRC)
+                    .src(kernel_src)
                     .build(&context)?;
 
     // set up the queue to use
@@ -466,10 +494,6 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     // create a random number generator
     let mut rng = thread_rng();
 
-    // get factory, caller, and initialization code hash from config object
-    let factory: [u8; 20] = config.factory_address;
-    let caller: [u8; 20] = config.calling_address;
-    let init_hash: [u8; 32] = config.init_code_hash;
 
     // determine the start time
     let start_time: f64 = SystemTime::now()
@@ -486,39 +510,20 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
         // create a random 4-byte salt using the random number generator
         let salt = rng.gen_iter::<u8>().take(4).collect::<Vec<u8>>();
 
-        // construct the 85-byte message to hash, leaving last 8 of salt empty
-        let mut message_vec: Vec<u8> = vec![CONTROL_CHARACTER];
-        message_vec.extend(factory.iter());
-        message_vec.extend(caller.iter());
-        message_vec.extend(&salt);
-        message_vec.extend(EIGHT_ZERO_BYTES.iter());
-        message_vec.extend(init_hash.iter());
-        let message: [u8; 85] = to_fixed_85(&message_vec);
+        // construct the 4-byte message to hash, leaving last 8 of salt empty
+        let message: [u8; 4] = to_fixed_4(&salt);
 
         // build a corresponding buffer for passing the message to the kernel
         let message_buffer = Buffer::builder()
                                .queue(ocl_pq.queue().clone())
                                .flags(MemFlags::new().read_only())
-                               .len(85)
+                               .len(4)
                                .copy_host_slice(&message)
                                .build()?;
 
-        // set the targets for leading and total zeroes from config object
-        let target: [u8; 2] = [
-          config.leading_zeroes_threshold,
-          config.total_zeroes_threshold
-        ];
-
-        // build a corresponding buffer for passing the targets to the kernel
-        let target_buffer = Buffer::builder()
-                              .queue(ocl_pq.queue().clone())
-                              .flags(MemFlags::new().read_only())
-                              .len(2)
-                              .copy_host_slice(&target)
-                              .build()?;
-
-        // reset nonce at zero & create a buffer to view it in little-endian
-        let mut nonce: [u64; 1] = [0];
+        // reset nonce & create a buffer to view it in little-endian
+        // for more uniformly distributed nonces, we shall initialize it to a random value
+        let mut nonce: [u64; 1] = [rng.next_u64() & 0xffffffff00000000];
         let mut view_buf = [0; 8];
 
         // build a corresponding buffer for passing the nonce to the kernel
@@ -530,113 +535,116 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                                  .build()?;
 
         // establish a buffer for nonces that result in desired addresses
-        let mut solutions: Vec<u64> = vec![0; 256];
+        let mut solutions: Vec<u64> = vec![0; 1];
         let solutions_buffer: Buffer<u64> = Buffer::builder()
                                               .queue(ocl_pq.queue().clone())
                                               .flags(MemFlags::new().write_only())
-                                              .len(256)
+                                              .len(1)
                                               .copy_host_slice(&solutions)
                                               .build()?;
 
-        // establish a buffer for counting solutions - return when one is found
-        let mut solution_count: Vec<u32> = vec![0];
-        let solution_count_buffer: Buffer<u32> = ocl_pq.create_buffer()?;
+        let mut previous_time: f64 = SystemTime::now()
+                                  .duration_since(UNIX_EPOCH)
+                                  .unwrap()
+                                  .as_secs() as f64;
 
         // repeatedly enqueue kernel to search for new addresses
         loop {
-            // clear the terminal screen
-            term.clear_screen()?;
-
             // calculate the current time
             let current_time: f64 = SystemTime::now()
                                       .duration_since(UNIX_EPOCH)
                                       .unwrap()
                                       .as_secs() as f64;
 
-            // get the total runtime and parse into hours : minutes : seconds
-            let total_runtime = current_time - start_time;
-            let total_runtime_hrs = *&total_runtime as u64 / (3600);
-            let total_runtime_mins = (
-              *&total_runtime as u64 - &total_runtime_hrs * 3600
-            ) / 60;
-            let total_runtime_secs = &total_runtime - (
-              &total_runtime_hrs * 3600
-            ) as f64 - (&total_runtime_mins * 60) as f64;
+            // we don't want to print too fast
+            let print_output: bool = current_time - previous_time > 0.99;
+            previous_time = current_time;
 
-            // determine the number of attempts being made per second
-            let work_rate: u128 = WORK_FACTOR * cumulative_nonce as u128;
-            if total_runtime > 0.0 {
-                rate = 1.0 / total_runtime;
+            // clear the terminal screen
+            if print_output {
+                term.clear_screen()?;
+
+                // get the total runtime and parse into hours : minutes : seconds
+                let total_runtime = current_time - start_time;
+                let total_runtime_hrs = *&total_runtime as u64 / (3600);
+                let total_runtime_mins = (
+                  *&total_runtime as u64 - &total_runtime_hrs * 3600
+                ) / 60;
+                let total_runtime_secs = &total_runtime - (
+                  &total_runtime_hrs * 3600
+                ) as f64 - (&total_runtime_mins * 60) as f64;
+
+                // determine the number of attempts being made per second
+                let work_rate: u128 = WORK_FACTOR * cumulative_nonce as u128;
+                if total_runtime > 0.0 {
+                    rate = 1.0 / total_runtime;
+                }
+
+                // fill the buffer for viewing the properly-formatted nonce
+                LittleEndian::write_u64(&mut view_buf, nonce[0]);
+
+
+                // calculate the terminal height, defaulting to a height of ten rows
+                let size = terminal_size();
+                let height: u16;
+                if let Some((Width(_w), Height(h))) = size {
+                    height = h;
+                } else {
+                    height = 10;
+                }
+
+                // display information about the total runtime and work size
+                term.write_line(&format!(
+                  "total runtime: {}:{:02}:{:02} ({} cycles)\t\t\t\
+                  work size per cycle: {}",
+                  total_runtime_hrs,
+                  total_runtime_mins,
+                  total_runtime_secs,
+                  cumulative_nonce,
+                  WORK_SIZE.separated_string()
+                ))?;    
+
+                // display information about the attempt rate and found solutions
+                term.write_line(&format!(
+                  "rate: {:.2} million attempts per second\t\t\t\
+                  total found this run: {}",
+                  work_rate as f64 * rate,
+                  &found
+                ))?;    
+                // display information about the current search criteria
+                term.write_line(&format!(
+                  "current search space: {}xxxxxxxx{:08x}\t\t\
+                  threshold: {} leading or {} total zeroes",
+                  hex::encode(&salt),
+                  BigEndian::read_u64(&view_buf),
+                  config.leading_zeroes_threshold,
+                  config.total_zeroes_threshold
+                ))?;
+
+                // display recently found solutions based on terminal height
+                let rows: usize = if height < 5 { 1 } else { (height - 4) as usize };
+                let last_rows: Vec<String> = found_list
+                                               .iter()
+                                               .cloned()
+                                               .rev()
+                                               .take(rows)
+                                               .collect();
+                let ordered: Vec<String> = last_rows.iter().cloned().rev().collect();
+                let recently_found = &ordered.join("\n");
+                term.write_line(&recently_found)?;
             }
-
-            // fill the buffer for viewing the properly-formatted nonce
-            LittleEndian::write_u64(&mut view_buf, nonce[0]);
-
-            // calculate the terminal height, defaulting to a height of ten rows
-            let size = terminal_size();
-            let height: u16;
-            if let Some((Width(_w), Height(h))) = size {
-                height = h;
-            } else {
-                height = 10;
-            }
-
-            // display information about the total runtime and work size
-            term.write_line(&format!(
-              "total runtime: {}:{:02}:{:02} ({} cycles)\t\t\t\
-              work size per cycle: {}",
-              total_runtime_hrs,
-              total_runtime_mins,
-              total_runtime_secs,
-              cumulative_nonce,
-              WORK_SIZE.separated_string()
-            ))?;
-
-            // display information about the attempt rate and found solutions
-            term.write_line(&format!(
-              "rate: {:.2} million attempts per second\t\t\t\
-              total found this run: {}",
-              work_rate as f64 * rate,
-              &found
-            ))?;
-
-            // display information about the current search criteria
-            term.write_line(&format!(
-              "current search space: {}xxxxxxxx{:08x}\t\t\
-              threshold: {} leading or {} total zeroes",
-              hex::encode(&salt),
-              BigEndian::read_u64(&view_buf),
-              target[0],
-              target[1]
-            ))?;
-
-            // display recently found solutions based on terminal height
-            let rows: usize = if height < 5 { 1 } else { (height - 4) as usize };
-            let last_rows: Vec<String> = found_list
-                                           .iter()
-                                           .cloned()
-                                           .rev()
-                                           .take(rows)
-                                           .collect();
-            let ordered: Vec<String> = last_rows.iter().cloned().rev().collect();
-            let recently_found = &ordered.join("\n");
-            term.write_line(&recently_found)?;
 
             // build the kernel and define the type of each buffer
             let kern = ocl_pq.kernel_builder("hashMessage")
                          .arg_named("message", None::<&Buffer<u8>>)
-                         .arg_named("target", None::<&Buffer<u8>>)
                          .arg_named("nonce", None::<&Buffer<u64>>)
                          .arg_named("solutions", None::<&Buffer<u64>>)
-                         .arg_named("solutionCount", None::<&Buffer<u32>>)
                          .build()?;
 
             // set each buffer
             kern.set_arg("message", Some(&message_buffer))?;
-            kern.set_arg("target", Some(&target_buffer))?;
             kern.set_arg("nonce", Some(&nonce_buffer))?;
             kern.set_arg("solutions", &solutions_buffer)?;
-            kern.set_arg("solutionCount", &solution_count_buffer)?;
 
             // enqueue the kernel
             unsafe { kern.enq()?; }
@@ -644,16 +652,16 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             // increment the cumulative nonce (does not reset after a match)
             cumulative_nonce += 1;
 
-            // read the number of solutions from the device
-            solution_count_buffer.read(&mut solution_count).enq()?;
+            // read the solutions from the device
+            solutions_buffer.read(&mut solutions).enq()?;
 
             // if at least one solution is found, end the loop
-            if solution_count[0] != 0 {
+            if solutions[0] != 0 {
                 break;
             }
 
             // if no solution has yet been found, increment the nonce
-            nonce[0] += INTERVAL as u64;
+            nonce[0] = (nonce[0] + (INTERVAL as u64)) & 0xffffffff00000000;
 
             // update the nonce buffer with the incremented nonce value
             nonce_buffer = Buffer::builder()
@@ -663,9 +671,6 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                              .copy_host_slice(&nonce)
                              .build()?;
         }
-
-        // read the located solutions from the device
-        solutions_buffer.read(&mut solutions).enq()?;
 
         // iterate over each solution, first converting to a fixed array
         solutions
@@ -825,9 +830,9 @@ fn to_fixed_47(bytes: &std::vec::Vec<u8>) -> [u8; 47] {
     array
 }
 
-/// Convert a properly-sized vector to a fixed array of 85 bytes.
-fn to_fixed_85(bytes: &std::vec::Vec<u8>) -> [u8; 85] {
-    let mut array = [0; 85];
+/// Convert a properly-sized vector to a fixed array of 4 bytes.
+fn to_fixed_4(bytes: &std::vec::Vec<u8>) -> [u8; 4] {
+    let mut array = [0; 4];
     let bytes = &bytes[..array.len()];
     array.copy_from_slice(bytes);
     array
