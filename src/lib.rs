@@ -494,7 +494,6 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     // create a random number generator
     let mut rng = thread_rng();
 
-
     // determine the start time
     let start_time: f64 = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -504,6 +503,9 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     // set up variables for tracking performance
     let mut rate: f64 = 0.0;
     let mut cumulative_nonce: u64 = 0;
+
+    // the previous timestamp of printing to the terminal
+    let mut previous_time: f64 = 0.0;
 
     // begin searching for addresses
     loop {
@@ -542,11 +544,6 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                                               .len(1)
                                               .copy_host_slice(&solutions)
                                               .build()?;
-
-        let mut previous_time: f64 = SystemTime::now()
-                                  .duration_since(UNIX_EPOCH)
-                                  .unwrap()
-                                  .as_secs() as f64;
 
         // repeatedly enqueue kernel to search for new addresses
         loop {
