@@ -32,9 +32,8 @@ use terminal_size::{Width, Height, terminal_size};
 use tiny_keccak::Keccak;
 
 // workset size (tweak this!)
-const WORK_SIZE: usize = 0x4000000; // max. 0x15400000 to abs. max 0xffffffff
+const WORK_SIZE: u32 = 0x4000000; // max. 0x15400000 to abs. max 0xffffffff
 
-const INTERVAL: u64 = 0x100000000;
 const WORK_FACTOR: u128 = (WORK_SIZE as u128) / 1_000_000;
 const ZERO_BYTE: u8 = 0x00;
 const EIGHT_ZERO_BYTES: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -507,6 +506,9 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     // the previous timestamp of printing to the terminal
     let mut previous_time: f64 = 0.0;
 
+    // the last work duration in milliseconds
+    let mut work_duration_millis: u64 = 0;
+
     // begin searching for addresses
     loop {
         // create a random 4-byte salt using the random number generator
@@ -525,7 +527,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
         // reset nonce & create a buffer to view it in little-endian
         // for more uniformly distributed nonces, we shall initialize it to a random value
-        let mut nonce: [u64; 1] = [rng.next_u64() & 0xffffffff00000000];
+        let mut nonce: [u32; 1] = [rng.next_u32()];
         let mut view_buf = [0; 8];
 
         // build a corresponding buffer for passing the nonce to the kernel
@@ -547,11 +549,24 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
         // repeatedly enqueue kernel to search for new addresses
         loop {
+            // build the kernel and define the type of each buffer
+            let kern = ocl_pq.kernel_builder("hashMessage")
+                         .arg_named("message", None::<&Buffer<u8>>)
+                         .arg_named("nonce", None::<&Buffer<u32>>)
+                         .arg_named("solutions", None::<&Buffer<u64>>)
+                         .build()?;
+
+            // set each buffer
+            kern.set_arg("message", Some(&message_buffer))?;
+            kern.set_arg("nonce", Some(&nonce_buffer))?;
+            kern.set_arg("solutions", &solutions_buffer)?;
+
+            // enqueue the kernel
+            unsafe { kern.enq()?; }
+
             // calculate the current time
-            let current_time: f64 = SystemTime::now()
-                                      .duration_since(UNIX_EPOCH)
-                                      .unwrap()
-                                      .as_secs() as f64;
+            let mut now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+            let current_time: f64 = now.as_secs() as f64;
 
             // we don't want to print too fast
             let print_output: bool = current_time - previous_time > 0.99;
@@ -578,7 +593,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                 }
 
                 // fill the buffer for viewing the properly-formatted nonce
-                LittleEndian::write_u64(&mut view_buf, nonce[0]);
+                LittleEndian::write_u64(&mut view_buf, (nonce[0] as u64) << 32);
 
 
                 // calculate the terminal height, defaulting to a height of ten rows
@@ -631,26 +646,28 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                 term.write_line(&recently_found)?;
             }
 
-            // build the kernel and define the type of each buffer
-            let kern = ocl_pq.kernel_builder("hashMessage")
-                         .arg_named("message", None::<&Buffer<u8>>)
-                         .arg_named("nonce", None::<&Buffer<u64>>)
-                         .arg_named("solutions", None::<&Buffer<u64>>)
-                         .build()?;
-
-            // set each buffer
-            kern.set_arg("message", Some(&message_buffer))?;
-            kern.set_arg("nonce", Some(&nonce_buffer))?;
-            kern.set_arg("solutions", &solutions_buffer)?;
-
-            // enqueue the kernel
-            unsafe { kern.enq()?; }
-
             // increment the cumulative nonce (does not reset after a match)
             cumulative_nonce += 1;
 
+            // record the start time of the work
+            let work_start_time_millis = 
+                now.as_secs() * 1000 + now.subsec_nanos() as u64 / 1000000;
+
+            // sleep for 98% of the previous work duration to conserve CPU
+            if work_duration_millis != 0 {
+                std::thread::sleep(std::time::Duration::from_millis(
+                    work_duration_millis * 980 / 1000,
+                ));
+            }
+
             // read the solutions from the device
             solutions_buffer.read(&mut solutions).enq()?;
+
+            // record the end time of the work and compute how long the work took
+            now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+            work_duration_millis = 
+                (now.as_secs() * 1000 + now.subsec_nanos() as u64 / 1000000)
+                - work_start_time_millis;
 
             // if at least one solution is found, end the loop
             if solutions[0] != 0 {
@@ -658,7 +675,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             }
 
             // if no solution has yet been found, increment the nonce
-            nonce[0] = (nonce[0] + (INTERVAL as u64)) & 0xffffffff00000000;
+            nonce[0] += 1;
 
             // update the nonce buffer with the incremented nonce value
             nonce_buffer = Buffer::builder()
