@@ -188,38 +188,41 @@ static inline void keccakf(ulong *a)
 #undef o
 }
 
-#define hasTotal(d) ( \
-  (!(d[0])) + (!(d[1])) + (!(d[2])) + (!(d[3])) + \
-  (!(d[4])) + (!(d[5])) + (!(d[6])) + (!(d[7])) + \
-  (!(d[8])) + (!(d[9])) + (!(d[10])) + (!(d[11])) + \
-  (!(d[12])) + (!(d[13])) + (!(d[14])) + (!(d[15])) + \
-  (!(d[16])) + (!(d[17])) + (!(d[18])) + (!(d[19])) \
+#define hasTotal(d, S) ( \
+  ((d[0] == S)) + ((d[1] == S)) + ((d[2] == S)) + ((d[3] == S)) + \
+  ((d[4] == S)) + (!(d[5] == S)) + (!(d[6] == S)) + (!(d[7] == S)) + \
+  ((d[8] == S)) + (!(d[9] == S)) + (!(d[10] == S)) + (!(d[11] == S)) + \
+  ((d[12] == S)) + (!(d[13] == S)) + (!(d[14] == S)) + (!(d[15] == S)) + \
+  ((d[16] == S)) + (!(d[17] == S)) + (!(d[18] == S)) + (!(d[19] == S)) \
 >= TOTAL_ZEROES)
 
 #if LEADING_ZEROES == 8
 #define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1]))
-#elif LEADING_ZEROES == 7
-#define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x00ffffffu))
-#elif LEADING_ZEROES == 6
-#define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x0000ffffu))
-#elif LEADING_ZEROES == 5
-#define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x000000ffu))
-#elif LEADING_ZEROES == 4
-#define hasLeading(d) (!(((uint*)d)[0]))
-#elif LEADING_ZEROES == 3
-#define hasLeading(d) (!(((uint*)d)[0] & 0x00ffffffu))
-#elif LEADING_ZEROES == 2
-#define hasLeading(d) (!(((uint*)d)[0] & 0x0000ffffu))
-#elif LEADING_ZEROES == 1
-#define hasLeading(d) (!(((uint*)d)[0] & 0x000000ffu))
+// #elif LEADING_ZEROES == 7
+// #define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x00ffffffu))
+// #elif LEADING_ZEROES == 6
+// #define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x0000ffffu))
+// #elif LEADING_ZEROES == 5
+// #define hasLeading(d) (!(((uint*)d)[0]) && !(((uint*)d)[1] & 0x000000ffu))
+// #elif LEADING_ZEROES == 4
+// #define hasLeading(d) ((((uint*)d)[0] == 0x61616161u))
+// #elif LEADING_ZEROES == 3
+// #define hasLeading(d) (!(((uint*)d)[0] & 0x00ffffffu))
+// #elif LEADING_ZEROES == 2
+// #define hasLeading(d) (!(((uint*)d)[0] & 0x0000ffffu))
+// #elif LEADING_ZEROES == 1
+// #define hasLeading(d) (!(((uint*)d)[0] & 0x000000ffu))
 #else
 static inline bool hasLeading(uchar const *d)
 {
-#pragma unroll
-  for (uint i = 0; i < LEADING_ZEROES; ++i) {
-    if (d[i] != 0) return false;
-  }
-  return true;
+// #pragma unroll
+  return (d[0] == 0xab &&
+  d[1] == 0xcd && 
+  d[2] == 0xef);
+  // for (uint i = 0; i < LEADING_ZEROES; ++i) {
+  //   if (d[i] != 0xaa) return false;
+  // }
+  // return true;
 }
 #endif
 
@@ -354,9 +357,9 @@ __kernel void hashMessage(
   // determine if the address meets the constraints
   if (
     hasLeading(digest) 
-#if TOTAL_ZEROES <= 20
-    || hasTotal(digest)
-#endif
+// #if TOTAL_ZEROES <= 20
+//     || hasTotal(digest, 'a')
+// #endif
   ) {
     // To be honest, if we are using OpenCL, 
     // we just need to write one solution for all practical purposes,
