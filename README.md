@@ -13,6 +13,13 @@ $ export INIT_CODE_HASH="<HASH_OF_YOUR_CONTRACT_INIT_CODE_GOES_HERE>"
 $ cargo run --release $FACTORY $CALLER $INIT_CODE_HASH
 ```
 
+## UPDATE
+
+To use with the zora prefix:
+```sh
+cargo run --release 0x0000000000ffe8b47b3e2130213b802212439497 0x9444390c01Dd5b7249E53FAc31290F7dFF53450D 0x043e1feac23293ca2d8621097e676a60cf43513011db4a9e26d6f0e6445ae144 0
+```
+
 For each efficient address found, the salt, resultant addresses, and value *(i.e. approximate rarity)* will be written to `efficient_addresses.txt`. Verify that one of the salts actually results in the intended address before getting in too deep - ideally, the CREATE2 factory will have a view method for checking what address you'll get for submitting a particular salt. Be sure not to change the factory address or the init code without first removing any existing data to prevent the two salt types from becoming commingled. There's also a *very* simple monitoring tool available if you run `$python3 analysis.py` in another tab.
 
 This tool was originally built for use with [`Pr000xy`](https://github.com/0age/Pr000xy), including with [`Create2Factory`](https://github.com/0age/Pr000xy/blob/master/contracts/Create2Factory.sol) directly.
