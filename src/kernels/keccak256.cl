@@ -216,9 +216,9 @@ static inline void keccakf(ulong *a)
 static inline bool hasLeading(uchar const *d)
 {
 // #pragma unroll
-  return (d[0] == 0xab &&
-  d[1] == 0xcd && 
-  d[2] == 0xef);
+  return (d[0] == 0x77 &&
+  d[1] == 0x77 && 
+  d[2] == 0x77);
   // for (uint i = 0; i < LEADING_ZEROES; ++i) {
   //   if (d[i] != 0xaa) return false;
   // }

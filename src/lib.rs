@@ -89,7 +89,7 @@ impl Config {
 
         let leading_zeroes_threshold_string= match args.next() {
             Some(arg) => arg,
-            None => String::from("3"),
+            None => String::from("7"),
         };
 
         let total_zeroes_threshold_string = match args.next() {
