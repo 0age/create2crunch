@@ -1,12 +1,12 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 pub struct Reward {
-    reward: HashMap<usize, &'static str>,
+    reward: FxHashMap<usize, &'static str>,
 }
 
 impl Reward {
     pub fn new() -> Self {
-        let reward = HashMap::from([
+        let reward = FxHashMap::from_iter([
             (5, "4"),
             (6, "454"),
             (7, "57926"),
