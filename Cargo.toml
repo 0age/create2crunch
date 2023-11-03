@@ -2,6 +2,7 @@
 name = "create2crunch"
 version = "0.2.0"
 authors = ["0age <0age@protonmail.com"]
+edition = "2021"
 
 [dependencies]
 byteorder = "1"
