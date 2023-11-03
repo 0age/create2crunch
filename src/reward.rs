@@ -207,9 +207,15 @@ impl Reward {
         reward.insert(378, String::from("1329227995784915872903807060280344576"));
         reward.insert(379, String::from("170474140766654103026661251472666657794"));
         reward.insert(399, String::from("340282366920938463463374607431768211456"));
-        reward.insert(420, String::from("87112285931760246646623899502532662132736"));
+        reward.insert(
+            420,
+            String::from("87112285931760246646623899502532662132736"),
+        );
         let default_value = String::from("0");
-        Reward { reward, default_value }
+        Reward {
+            reward,
+            default_value,
+        }
     }
     pub fn get(&self, value: &usize) -> &String {
         let return_value = self.reward.get(value).unwrap_or(&self.default_value);

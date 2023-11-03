@@ -14,21 +14,21 @@ extern crate terminal_size;
 extern crate tiny_keccak;
 
 use std::error::Error;
+use std::fs::OpenOptions;
 use std::i64;
 use std::io::prelude::*;
-use std::fs::OpenOptions;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use byteorder::{ByteOrder, BigEndian, LittleEndian};
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use console::Term;
 use fs2::FileExt;
 use hex::FromHex;
 use itertools::Itertools;
-use ocl::{ProQue, Buffer, MemFlags, Platform, Device, Context, Queue, Program};
+use ocl::{Buffer, Context, Device, MemFlags, Platform, ProQue, Program, Queue};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 use separator::Separatable;
-use terminal_size::{Width, Height, terminal_size};
+use terminal_size::{terminal_size, Height, Width};
 use tiny_keccak::Keccak;
 
 // workset size (tweak this!)
@@ -87,7 +87,7 @@ impl Config {
             None => String::from("255"), // indicates that CPU will be used.
         };
 
-        let leading_zeroes_threshold_string= match args.next() {
+        let leading_zeroes_threshold_string = match args.next() {
             Some(arg) => arg,
             None => String::from("3"),
         };
@@ -111,46 +111,32 @@ impl Config {
         }
 
         // convert main arguments from hex string to vector of bytes
-        let factory_address_vec: Vec<u8> = match Vec::from_hex(
-            &factory_address_string
-        ) {
+        let factory_address_vec: Vec<u8> = match Vec::from_hex(&factory_address_string) {
             Ok(t) => t,
-            Err(_) => {
-                return Err("could not decode factory address argument.")
-            }
+            Err(_) => return Err("could not decode factory address argument."),
         };
 
-        let calling_address_vec: Vec<u8> = match Vec::from_hex(
-            &calling_address_string
-        ) {
+        let calling_address_vec: Vec<u8> = match Vec::from_hex(&calling_address_string) {
             Ok(t) => t,
-            Err(_) => {
-                return Err("could not decode calling address argument.")
-            }
+            Err(_) => return Err("could not decode calling address argument."),
         };
 
-        let init_code_hash_vec: Vec<u8> = match Vec::from_hex(
-            &init_code_hash_string
-        ) {
+        let init_code_hash_vec: Vec<u8> = match Vec::from_hex(&init_code_hash_string) {
             Ok(t) => t,
-            Err(_) => {
-                return Err(
-                    "could not decode initialization code hash argument."
-                )
-            }
+            Err(_) => return Err("could not decode initialization code hash argument."),
         };
 
         // validate length of each argument (20, 20, 32)
         if factory_address_vec.len() != 20 {
-            return Err("invalid length for factory address argument.")
+            return Err("invalid length for factory address argument.");
         }
 
         if calling_address_vec.len() != 20 {
-            return Err("invalid length for calling address argument.")
+            return Err("invalid length for calling address argument.");
         }
 
         if init_code_hash_vec.len() != 32 {
-            return Err("invalid length for initialization code hash argument.")
+            return Err("invalid length for initialization code hash argument.");
         }
 
         // convert from vector to fixed array
@@ -159,55 +145,38 @@ impl Config {
         let init_code_hash = to_fixed_32(init_code_hash_vec);
 
         // convert gpu arguments to u8 values
-        let gpu_device: u8 = match gpu_device_string
-                                               .parse::<u8>() {
+        let gpu_device: u8 = match gpu_device_string.parse::<u8>() {
             Ok(t) => t,
-            Err(_) => {
-                return Err(
-                    "invalid gpu device value."
-                )
-            }
+            Err(_) => return Err("invalid gpu device value."),
         };
 
-        let leading_zeroes_threshold = match leading_zeroes_threshold_string
-                                               .parse::<u8>() {
+        let leading_zeroes_threshold = match leading_zeroes_threshold_string.parse::<u8>() {
             Ok(t) => t,
-            Err(_) => {
-                return Err(
-                    "invalid leading zeroes threshold value supplied."
-                )
-            }
+            Err(_) => return Err("invalid leading zeroes threshold value supplied."),
         };
 
-        let total_zeroes_threshold = match total_zeroes_threshold_string
-                                             .parse::<u8>() {
+        let total_zeroes_threshold = match total_zeroes_threshold_string.parse::<u8>() {
             Ok(t) => t,
-            Err(_) => {
-                return Err(
-                    "invalid total zeroes threshold value supplied."
-                )
-            }
+            Err(_) => return Err("invalid total zeroes threshold value supplied."),
         };
 
         if leading_zeroes_threshold > 20 {
-            return Err("invalid value for leading zeroes threshold argument. (valid: 0 .. 20)")
+            return Err("invalid value for leading zeroes threshold argument. (valid: 0 .. 20)");
         }
 
-        if total_zeroes_threshold > 20 && total_zeroes_threshold != 255  {
-            return Err("invalid value for total zeroes threshold argument. (valid: 0 .. 20, 255)")
+        if total_zeroes_threshold > 20 && total_zeroes_threshold != 255 {
+            return Err("invalid value for total zeroes threshold argument. (valid: 0 .. 20, 255)");
         }
 
         // return the config object
-        Ok(
-          Self {
+        Ok(Self {
             factory_address,
             calling_address,
             init_code_hash,
             gpu_device,
             leading_zeroes_threshold,
-            total_zeroes_threshold
-          }
-        )
+            total_zeroes_threshold,
+        })
     }
 }
 
@@ -228,12 +197,10 @@ impl Config {
 pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
     // (create if necessary) and open a file where found salts will be written
     let file = OpenOptions::new()
-                 .append(true)
-                 .create(true)
-                 .open("efficient_addresses.txt")
-                 .expect(
-                   "Could not create or open `efficient_addresses.txt` file."
-                 );
+        .append(true)
+        .create(true)
+        .open("efficient_addresses.txt")
+        .expect("Could not create or open `efficient_addresses.txt` file.");
 
     // create object for computing rewards (relative rarity) for a given address
     let rewards = reward::Reward::new();
@@ -247,9 +214,7 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
     // begin searching for addresses
     loop {
         // create a random 6-byte salt using the random number generator
-        let salt_random_segment = rng.gen_iter::<u8>()
-                                    .take(6)
-                                    .collect::<Vec<u8>>();
+        let salt_random_segment = rng.gen_iter::<u8>().take(6).collect::<Vec<u8>>();
 
         // header: 0xff ++ factory ++ caller ++ salt_random_segment (47 bytes)
         let mut header_vec: Vec<u8> = vec![CONTROL_CHARACTER];
@@ -268,127 +233,108 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
 
         // iterate over a 6-byte nonce and compute each address
         (0..MAX_INCREMENTER)
-          .into_par_iter() // parallelization
-          .map(|x| u64_to_fixed_6(&x)) // convert int nonces to fixed arrays
-          .for_each(|salt_incremented_segment| {
-            // clone the partially-hashed object
-            let mut hash = hash_header.clone();
+            .into_par_iter() // parallelization
+            .map(|x| u64_to_fixed_6(&x)) // convert int nonces to fixed arrays
+            .for_each(|salt_incremented_segment| {
+                // clone the partially-hashed object
+                let mut hash = hash_header.clone();
 
-            // update with body and footer (total: 38 bytes)
-            hash.update(&salt_incremented_segment);
-            hash.update(&footer);
+                // update with body and footer (total: 38 bytes)
+                hash.update(&salt_incremented_segment);
+                hash.update(&footer);
 
-            // hash the payload and get the result
-            let mut res: [u8; 32] = [0; 32];
-            hash.finalize(&mut res);
+                // hash the payload and get the result
+                let mut res: [u8; 32] = [0; 32];
+                hash.finalize(&mut res);
 
-            // get the total zero bytes associated with the address
-            let total = res
-                          .iter()
-                          .dropping(12)
-                          .filter(|&n| *n == ZERO_BYTE)
-                          .count();
+                // get the total zero bytes associated with the address
+                let total = res.iter().dropping(12).filter(|&n| *n == ZERO_BYTE).count();
 
-            // only proceed if there are at least three zero bytes
-            if total > 2 {
-                // get the leading zero bytes associated with the address
-                let mut leading = 0;
+                // only proceed if there are at least three zero bytes
+                if total > 2 {
+                    // get the leading zero bytes associated with the address
+                    let mut leading = 0;
 
-                // iterate through each byte of address and count zero bytes
-                for (i, b) in res.iter().dropping(12).enumerate() {
-                    if b != &ZERO_BYTE {
-                        leading = i; // set leading on finding non-zero byte
-                        break;       // stop searching upon locating
-                    }
-                }
-
-                // look up the reward amount
-                let key = leading * 20 + total;
-                let reward_amount = rewards.get(&key);
-
-                // proceed if an efficient address has been found
-                if reward_amount != ZERO_REWARD {
-                    // truncate first 12 bytes from the hash to derive address
-                    let mut address_bytes: [u8; 20] = Default::default();
-                    address_bytes.copy_from_slice(&res[12..]);
-
-                    // get the address that results from the hash
-                    let address_hex_string = hex::encode(&address_bytes);
-                    let address = format!("{}", &address_hex_string);
-
-                    // get the full salt used to create the address
-                    let header_hex_string = hex::encode(&header_vec);
-                    let body_hex_string = hex::encode(salt_incremented_segment
-                                                        .to_vec());
-                    let full_salt = format!(
-                      "0x{}{}",
-                      &header_hex_string[42..],
-                      &body_hex_string
-                    );
-
-                    // encode address and set up a variable for the checksum
-                    let address_encoded = address.as_bytes();
-                    let mut checksum_address = "0x".to_string();
-
-                    // create new hash object for computing the checksum
-                    let mut checksum_hash = Keccak::new_keccak256();
-
-                    // update with utf8-encoded address (total: 20 bytes)
-                    checksum_hash.update(&address_encoded);
-
-                    // hash the payload and get the result
-                    let mut checksum_res: [u8; 32] = [0; 32];
-                    checksum_hash.finalize(&mut checksum_res);
-                    let address_hash = hex::encode(checksum_res);
-
-                    // compute the address checksum using the above hash
-                    for nibble in 0..address.len() {
-                        let hash_character = i64::from_str_radix(
-                          &address_hash
-                            .chars()
-                            .nth(nibble)
-                            .unwrap()
-                            .to_string(),
-                          16
-                        ).unwrap();
-                        let character = address.chars().nth(nibble).unwrap();
-                        if hash_character > 7 {
-                            checksum_address = format!(
-                              "{}{}",
-                              checksum_address,
-                              character.to_uppercase().to_string()
-                            );
-                        } else {
-                            checksum_address = format!(
-                              "{}{}",
-                              checksum_address,
-                              character.to_string()
-                            );
+                    // iterate through each byte of address and count zero bytes
+                    for (i, b) in res.iter().dropping(12).enumerate() {
+                        if b != &ZERO_BYTE {
+                            leading = i; // set leading on finding non-zero byte
+                            break; // stop searching upon locating
                         }
                     }
 
-                    // display the salt and the address.
-                    let output = format!(
-                      "{} => {} => {}",
-                      full_salt,
-                      checksum_address,
-                      reward_amount
-                    );
-                    println!("{}", &output);
+                    // look up the reward amount
+                    let key = leading * 20 + total;
+                    let reward_amount = rewards.get(&key);
 
-                    // create a lock on the file before writing
-                    file.lock_exclusive().expect("Couldn't lock file.");
+                    // proceed if an efficient address has been found
+                    if reward_amount != ZERO_REWARD {
+                        // truncate first 12 bytes from the hash to derive address
+                        let mut address_bytes: [u8; 20] = Default::default();
+                        address_bytes.copy_from_slice(&res[12..]);
 
-                    // write the result to file
-                    writeln!(&file, "{}", &output).expect(
-                      "Couldn't write to `efficient_addresses.txt` file."
-                    );
+                        // get the address that results from the hash
+                        let address_hex_string = hex::encode(&address_bytes);
+                        let address = format!("{}", &address_hex_string);
 
-                    // release the file lock
-                    file.unlock().expect("Couldn't unlock file.")
+                        // get the full salt used to create the address
+                        let header_hex_string = hex::encode(&header_vec);
+                        let body_hex_string = hex::encode(salt_incremented_segment.to_vec());
+                        let full_salt =
+                            format!("0x{}{}", &header_hex_string[42..], &body_hex_string);
+
+                        // encode address and set up a variable for the checksum
+                        let address_encoded = address.as_bytes();
+                        let mut checksum_address = "0x".to_string();
+
+                        // create new hash object for computing the checksum
+                        let mut checksum_hash = Keccak::new_keccak256();
+
+                        // update with utf8-encoded address (total: 20 bytes)
+                        checksum_hash.update(&address_encoded);
+
+                        // hash the payload and get the result
+                        let mut checksum_res: [u8; 32] = [0; 32];
+                        checksum_hash.finalize(&mut checksum_res);
+                        let address_hash = hex::encode(checksum_res);
+
+                        // compute the address checksum using the above hash
+                        for nibble in 0..address.len() {
+                            let hash_character = i64::from_str_radix(
+                                &address_hash.chars().nth(nibble).unwrap().to_string(),
+                                16,
+                            )
+                            .unwrap();
+                            let character = address.chars().nth(nibble).unwrap();
+                            if hash_character > 7 {
+                                checksum_address = format!(
+                                    "{}{}",
+                                    checksum_address,
+                                    character.to_uppercase().to_string()
+                                );
+                            } else {
+                                checksum_address =
+                                    format!("{}{}", checksum_address, character.to_string());
+                            }
+                        }
+
+                        // display the salt and the address.
+                        let output =
+                            format!("{} => {} => {}", full_salt, checksum_address, reward_amount);
+                        println!("{}", &output);
+
+                        // create a lock on the file before writing
+                        file.lock_exclusive().expect("Couldn't lock file.");
+
+                        // write the result to file
+                        writeln!(&file, "{}", &output)
+                            .expect("Couldn't write to `efficient_addresses.txt` file.");
+
+                        // release the file lock
+                        file.unlock().expect("Couldn't unlock file.")
+                    }
                 }
-            }
-        });
+            });
     }
 }
 
@@ -415,18 +361,16 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
 /// further optimization - contributions are more than welcome!
 pub fn gpu(config: Config) -> ocl::Result<()> {
     println!(
-      "Setting up experimental OpenCL miner using device {}...",
-      config.gpu_device
+        "Setting up experimental OpenCL miner using device {}...",
+        config.gpu_device
     );
 
     // (create if necessary) and open a file where found salts will be written
     let file = OpenOptions::new()
-                 .append(true)
-                 .create(true)
-                 .open("efficient_addresses.txt")
-                 .expect(
-                   "Could not create or open `efficient_addresses.txt` file."
-                 );
+        .append(true)
+        .create(true)
+        .open("efficient_addresses.txt")
+        .expect("Could not create or open `efficient_addresses.txt` file.");
 
     // create object for computing rewards (relative rarity) for a given address
     let rewards = reward::Reward::new();
@@ -446,10 +390,10 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
     // set up the context to use
     let context = Context::builder()
-                    .platform(platform)
-                    .devices(device.clone())
-                    .build()?;
-    
+        .platform(platform)
+        .devices(device.clone())
+        .build()?;
+
     // get factory, caller, and initialization code hash from config object
     let factory: [u8; 20] = config.factory_address;
     let caller: [u8; 20] = config.calling_address;
@@ -480,9 +424,9 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
     // set up the program to use
     let program = Program::builder()
-                    .devices(device)
-                    .src(kernel_src)
-                    .build(&context)?;
+        .devices(device)
+        .src(kernel_src)
+        .build(&context)?;
 
     // set up the queue to use
     let queue = Queue::new(&context, device, None)?;
@@ -495,9 +439,9 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
     // determine the start time
     let start_time: f64 = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs() as f64;
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as f64;
 
     // set up variables for tracking performance
     let mut rate: f64 = 0.0;
@@ -519,11 +463,11 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
         // build a corresponding buffer for passing the message to the kernel
         let message_buffer = Buffer::builder()
-                               .queue(ocl_pq.queue().clone())
-                               .flags(MemFlags::new().read_only())
-                               .len(4)
-                               .copy_host_slice(&message)
-                               .build()?;
+            .queue(ocl_pq.queue().clone())
+            .flags(MemFlags::new().read_only())
+            .len(4)
+            .copy_host_slice(&message)
+            .build()?;
 
         // reset nonce & create a buffer to view it in little-endian
         // for more uniformly distributed nonces, we shall initialize it to a random value
@@ -532,29 +476,30 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
         // build a corresponding buffer for passing the nonce to the kernel
         let mut nonce_buffer = Buffer::builder()
-                                 .queue(ocl_pq.queue().clone())
-                                 .flags(MemFlags::new().read_only())
-                                 .len(1)
-                                 .copy_host_slice(&nonce)
-                                 .build()?;
+            .queue(ocl_pq.queue().clone())
+            .flags(MemFlags::new().read_only())
+            .len(1)
+            .copy_host_slice(&nonce)
+            .build()?;
 
         // establish a buffer for nonces that result in desired addresses
         let mut solutions: Vec<u64> = vec![0; 1];
         let solutions_buffer: Buffer<u64> = Buffer::builder()
-                                              .queue(ocl_pq.queue().clone())
-                                              .flags(MemFlags::new().write_only())
-                                              .len(1)
-                                              .copy_host_slice(&solutions)
-                                              .build()?;
+            .queue(ocl_pq.queue().clone())
+            .flags(MemFlags::new().write_only())
+            .len(1)
+            .copy_host_slice(&solutions)
+            .build()?;
 
         // repeatedly enqueue kernel to search for new addresses
         loop {
             // build the kernel and define the type of each buffer
-            let kern = ocl_pq.kernel_builder("hashMessage")
-                         .arg_named("message", None::<&Buffer<u8>>)
-                         .arg_named("nonce", None::<&Buffer<u32>>)
-                         .arg_named("solutions", None::<&Buffer<u64>>)
-                         .build()?;
+            let kern = ocl_pq
+                .kernel_builder("hashMessage")
+                .arg_named("message", None::<&Buffer<u8>>)
+                .arg_named("nonce", None::<&Buffer<u32>>)
+                .arg_named("solutions", None::<&Buffer<u64>>)
+                .build()?;
 
             // set each buffer
             kern.set_arg("message", Some(&message_buffer))?;
@@ -562,7 +507,9 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             kern.set_arg("solutions", &solutions_buffer)?;
 
             // enqueue the kernel
-            unsafe { kern.enq()?; }
+            unsafe {
+                kern.enq()?;
+            }
 
             // calculate the current time
             let mut now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
@@ -579,12 +526,10 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                 // get the total runtime and parse into hours : minutes : seconds
                 let total_runtime = current_time - start_time;
                 let total_runtime_hrs = *&total_runtime as u64 / (3600);
-                let total_runtime_mins = (
-                  *&total_runtime as u64 - &total_runtime_hrs * 3600
-                ) / 60;
-                let total_runtime_secs = &total_runtime - (
-                  &total_runtime_hrs * 3600
-                ) as f64 - (&total_runtime_mins * 60) as f64;
+                let total_runtime_mins = (*&total_runtime as u64 - &total_runtime_hrs * 3600) / 60;
+                let total_runtime_secs = &total_runtime
+                    - (&total_runtime_hrs * 3600) as f64
+                    - (&total_runtime_mins * 60) as f64;
 
                 // determine the number of attempts being made per second
                 let work_rate: u128 = WORK_FACTOR * cumulative_nonce as u128;
@@ -594,7 +539,6 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
                 // fill the buffer for viewing the properly-formatted nonce
                 LittleEndian::write_u64(&mut view_buf, (nonce[0] as u64) << 32);
-
 
                 // calculate the terminal height, defaulting to a height of ten rows
                 let size = terminal_size();
@@ -607,40 +551,35 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
                 // display information about the total runtime and work size
                 term.write_line(&format!(
-                  "total runtime: {}:{:02}:{:02} ({} cycles)\t\t\t\
+                    "total runtime: {}:{:02}:{:02} ({} cycles)\t\t\t\
                   work size per cycle: {}",
-                  total_runtime_hrs,
-                  total_runtime_mins,
-                  total_runtime_secs,
-                  cumulative_nonce,
-                  WORK_SIZE.separated_string()
-                ))?;    
+                    total_runtime_hrs,
+                    total_runtime_mins,
+                    total_runtime_secs,
+                    cumulative_nonce,
+                    WORK_SIZE.separated_string()
+                ))?;
 
                 // display information about the attempt rate and found solutions
                 term.write_line(&format!(
-                  "rate: {:.2} million attempts per second\t\t\t\
+                    "rate: {:.2} million attempts per second\t\t\t\
                   total found this run: {}",
-                  work_rate as f64 * rate,
-                  &found
-                ))?;    
+                    work_rate as f64 * rate,
+                    &found
+                ))?;
                 // display information about the current search criteria
                 term.write_line(&format!(
-                  "current search space: {}xxxxxxxx{:08x}\t\t\
+                    "current search space: {}xxxxxxxx{:08x}\t\t\
                   threshold: {} leading or {} total zeroes",
-                  hex::encode(&salt),
-                  BigEndian::read_u64(&view_buf),
-                  config.leading_zeroes_threshold,
-                  config.total_zeroes_threshold
+                    hex::encode(&salt),
+                    BigEndian::read_u64(&view_buf),
+                    config.leading_zeroes_threshold,
+                    config.total_zeroes_threshold
                 ))?;
 
                 // display recently found solutions based on terminal height
                 let rows: usize = if height < 5 { 1 } else { (height - 4) as usize };
-                let last_rows: Vec<String> = found_list
-                                               .iter()
-                                               .cloned()
-                                               .rev()
-                                               .take(rows)
-                                               .collect();
+                let last_rows: Vec<String> = found_list.iter().cloned().rev().take(rows).collect();
                 let ordered: Vec<String> = last_rows.iter().cloned().rev().collect();
                 let recently_found = &ordered.join("\n");
                 term.write_line(&recently_found)?;
@@ -650,8 +589,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             cumulative_nonce += 1;
 
             // record the start time of the work
-            let work_start_time_millis = 
-                now.as_secs() * 1000 + now.subsec_nanos() as u64 / 1000000;
+            let work_start_time_millis = now.as_secs() * 1000 + now.subsec_nanos() as u64 / 1000000;
 
             // sleep for 98% of the previous work duration to conserve CPU
             if work_duration_millis != 0 {
@@ -665,8 +603,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
             // record the end time of the work and compute how long the work took
             now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-            work_duration_millis = 
-                (now.as_secs() * 1000 + now.subsec_nanos() as u64 / 1000000)
+            work_duration_millis = (now.as_secs() * 1000 + now.subsec_nanos() as u64 / 1000000)
                 - work_start_time_millis;
 
             // if at least one solution is found, end the loop
@@ -679,145 +616,132 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
             // update the nonce buffer with the incremented nonce value
             nonce_buffer = Buffer::builder()
-                             .queue(ocl_pq.queue().clone())
-                             .flags(MemFlags::new().read_write())
-                             .len(1)
-                             .copy_host_slice(&nonce)
-                             .build()?;
+                .queue(ocl_pq.queue().clone())
+                .flags(MemFlags::new().read_write())
+                .len(1)
+                .copy_host_slice(&nonce)
+                .build()?;
         }
 
         // iterate over each solution, first converting to a fixed array
         solutions
-          .iter()
-          .filter(|&i| *i != 0)
-          .map(|i| u64_to_le_fixed_8(i))
-          .for_each(|solution| {
-            // proceed if a solution is found at the given location
-            if &solution != &EIGHT_ZERO_BYTES {
-                let mut solution_message: Vec<u8> = vec![
-                  CONTROL_CHARACTER
-                ];
+            .iter()
+            .filter(|&i| *i != 0)
+            .map(|i| u64_to_le_fixed_8(i))
+            .for_each(|solution| {
+                // proceed if a solution is found at the given location
+                if &solution != &EIGHT_ZERO_BYTES {
+                    let mut solution_message: Vec<u8> = vec![CONTROL_CHARACTER];
 
-                solution_message.extend(factory.iter());
-                solution_message.extend(caller.iter());
-                solution_message.extend(salt.iter());
-                solution_message.extend(solution.iter());
-                solution_message.extend(init_hash.iter());
+                    solution_message.extend(factory.iter());
+                    solution_message.extend(caller.iter());
+                    solution_message.extend(salt.iter());
+                    solution_message.extend(solution.iter());
+                    solution_message.extend(init_hash.iter());
 
-                // create new hash object
-                let mut hash = Keccak::new_keccak256();
+                    // create new hash object
+                    let mut hash = Keccak::new_keccak256();
 
-                // update with header
-                hash.update(&solution_message);
+                    // update with header
+                    hash.update(&solution_message);
 
-                // hash the payload and get the result
-                let mut res: [u8; 32] = [0; 32];
-                hash.finalize(&mut res);
+                    // hash the payload and get the result
+                    let mut res: [u8; 32] = [0; 32];
+                    hash.finalize(&mut res);
 
-                // get the total zero bytes associated with the address
-                let total = res
-                              .iter()
-                              .dropping(12)
-                              .filter(|&n| *n == ZERO_BYTE)
-                              .count();
+                    // get the total zero bytes associated with the address
+                    let total = res.iter().dropping(12).filter(|&n| *n == ZERO_BYTE).count();
 
-                // get the leading zero bytes associated with the address
-                let mut leading = 0;
+                    // get the leading zero bytes associated with the address
+                    let mut leading = 0;
 
-                // iterate through each byte of address and count zero bytes
-                for (i, b) in res.iter().dropping(12).enumerate() {
-                    if b != &ZERO_BYTE {
-                        leading = i; // set leading on reaching non-zero byte
-                        break; // stop on locating (unless it's null address!)
+                    // iterate through each byte of address and count zero bytes
+                    for (i, b) in res.iter().dropping(12).enumerate() {
+                        if b != &ZERO_BYTE {
+                            leading = i; // set leading on reaching non-zero byte
+                            break; // stop on locating (unless it's null address!)
+                        }
                     }
-                }
 
-                let key = leading * 20 + total;
+                    let key = leading * 20 + total;
 
-                let mut address_bytes: [u8; 20] = Default::default();
-                address_bytes.copy_from_slice(&res[12..]);
+                    let mut address_bytes: [u8; 20] = Default::default();
+                    address_bytes.copy_from_slice(&res[12..]);
 
-                // get the address that results from the hash
-                let address_hex_string = hex::encode(&address_bytes);
-                let address = format!("{}", &address_hex_string);
+                    // get the address that results from the hash
+                    let address_hex_string = hex::encode(&address_bytes);
+                    let address = format!("{}", &address_hex_string);
 
-                // encode address and set up a variable for the checksum
-                let address_encoded = address.as_bytes();
-                let mut checksum_address = "0x".to_string();
+                    // encode address and set up a variable for the checksum
+                    let address_encoded = address.as_bytes();
+                    let mut checksum_address = "0x".to_string();
 
-                // create new hash object for computing the checksum
-                let mut checksum_hash = Keccak::new_keccak256();
+                    // create new hash object for computing the checksum
+                    let mut checksum_hash = Keccak::new_keccak256();
 
-                // update with utf8-encoded address (total: 20 bytes)
-                checksum_hash.update(&address_encoded);
+                    // update with utf8-encoded address (total: 20 bytes)
+                    checksum_hash.update(&address_encoded);
 
-                // hash the payload and get the result
-                let mut checksum_res: [u8; 32] = [0; 32];
-                checksum_hash.finalize(&mut checksum_res);
-                let address_hash = hex::encode(checksum_res);
+                    // hash the payload and get the result
+                    let mut checksum_res: [u8; 32] = [0; 32];
+                    checksum_hash.finalize(&mut checksum_res);
+                    let address_hash = hex::encode(checksum_res);
 
-                // compute the checksum using the above hash
-                for nibble in 0..address.len() {
-                    let hash_character = i64::from_str_radix(
-                      &address_hash
-                        .chars()
-                        .nth(nibble)
-                        .unwrap()
-                        .to_string(),
-                      16
-                    ).unwrap();
-                    let character = address.chars().nth(nibble).unwrap();
-                    if hash_character > 7 {
-                        checksum_address = format!(
-                          "{}{}",
-                          checksum_address,
-                          character.to_uppercase().to_string()
-                        );
-                    } else {
-                        checksum_address = format!(
-                          "{}{}",
-                          checksum_address,
-                          character.to_string()
-                        );
+                    // compute the checksum using the above hash
+                    for nibble in 0..address.len() {
+                        let hash_character = i64::from_str_radix(
+                            &address_hash.chars().nth(nibble).unwrap().to_string(),
+                            16,
+                        )
+                        .unwrap();
+                        let character = address.chars().nth(nibble).unwrap();
+                        if hash_character > 7 {
+                            checksum_address = format!(
+                                "{}{}",
+                                checksum_address,
+                                character.to_uppercase().to_string()
+                            );
+                        } else {
+                            checksum_address =
+                                format!("{}{}", checksum_address, character.to_string());
+                        }
                     }
+
+                    let reward_amount = rewards.get(&key);
+
+                    let output = format!(
+                        "0x{}{}{} => {} => {}",
+                        hex::encode(&caller),
+                        hex::encode(&salt),
+                        hex::encode(&solution),
+                        checksum_address,
+                        reward_amount
+                    );
+
+                    let show = format!("{} ({} / {})", &output, &leading, &total);
+                    let next_found = vec![show.to_string()];
+                    found_list.extend(next_found);
+
+                    file.lock_exclusive().expect("Couldn't lock file.");
+
+                    writeln!(&file, "{}", &output)
+                        .expect("Couldn't write to `efficient_addresses.txt` file.");
+
+                    file.unlock().expect("Couldn't unlock file.");
+                    found = found + 1;
                 }
-
-                let reward_amount = rewards.get(&key);
-
-                let output = format!(
-                  "0x{}{}{} => {} => {}",
-                  hex::encode(&caller),
-                  hex::encode(&salt),
-                  hex::encode(&solution),
-                  checksum_address,
-                  reward_amount
-                );
-
-                let show = format!("{} ({} / {})", &output, &leading, &total);
-                let next_found = vec![show.to_string()];
-                found_list.extend(next_found);
-
-                file.lock_exclusive().expect("Couldn't lock file.");
-
-                writeln!(&file, "{}", &output).expect(
-                  "Couldn't write to `efficient_addresses.txt` file."
-                );
-
-                file.unlock().expect("Couldn't unlock file.");
-                found = found + 1;
-            }
-        });
+            });
     }
 }
 
 /// Remove the `0x` prefix from a hex string.
 fn without_prefix(string: String) -> String {
     string
-      .char_indices()
-      .nth(2)
-      .and_then(|(i, _)| string.get(i..))
-      .unwrap()
-      .to_string()
+        .char_indices()
+        .nth(2)
+        .and_then(|(i, _)| string.get(i..))
+        .unwrap()
+        .to_string()
 }
 
 /// Convert a properly-sized vector to a fixed array of 20 bytes.
