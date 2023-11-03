@@ -5,16 +5,12 @@ authors = ["0age <0age@protonmail.com"]
 edition = "2021"
 
 [dependencies]
+alloy-primitives = { version = "0.4", features = ["rand"] }
 byteorder = "1"
-console = "0.7.5"
+console = "0.15"
 fs2 = "0.4.3"
-hex = "0.3.2"
-itertools = "0.8.0"
 ocl = "0.19"
-ocl-extras = "0.1.1"
-rand = "0.3"
+rand = "0.8"
 rayon = "1.0"
-separator = "0.3.1"
-terminal_size = "0.1.8"
-tiny-keccak = "1.4.2"
-thiserror = "=1.0.48"
+terminal_size = "0.3.0"
+tiny-keccak = "2.0"
