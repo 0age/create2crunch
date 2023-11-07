@@ -2,13 +2,13 @@
 
 > A Rust program for finding salts that create gas-efficient Ethereum addresses via CREATE2.
 
-Provide three arguments: a factory address (or contract that will call CREATE2), a caller address (for factory addresses that require it as a protection against frontrunning), and the keccak-256 hash of the initialization code of the contract that the factory will deploy. (The example below references [`Create2Factory` on Ropsten](https://ropsten.etherscan.io/address/0xa779284f095ef2eBb8ee26cd8384e49C57b26996).)
+Provide three arguments: a factory address (or contract that will call CREATE2), a caller address (for factory addresses that require it as a protection against frontrunning), and the keccak-256 hash of the initialization code of the contract that the factory will deploy. (The example below references [`Create2Factory` on Optimism Goerli](https://goerli-optimism.etherscan.io/address/0x4e59b44847b379578588920cA78FbF26c0B4956C).)
 
 ```sh
 $ git clone https://github.com/0age/create2crunch
 $ cd create2crunch
-$ export FACTORY="0xa779284f095ef2eBb8ee26cd8384e49C57b26996"
-$ export CALLER="<YOUR_ROPSTEN_ADDRESS_OF_CHOICE_GOES_HERE>"
+$ export FACTORY="0x4e59b44847b379578588920cA78FbF26c0B4956C"
+$ export CALLER="<YOUR_ADDRESS_OF_CHOICE_GOES_HERE>"
 $ export INIT_CODE_HASH="<HASH_OF_YOUR_CONTRACT_INIT_CODE_GOES_HERE>"
 $ cargo run --release $FACTORY $CALLER $INIT_CODE_HASH
 ```
