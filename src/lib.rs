@@ -230,6 +230,7 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
     let file = OpenOptions::new()
                  .append(true)
                  .create(true)
+                 .read(true)
                  .open("efficient_addresses.txt")
                  .expect(
                    "Could not create or open `efficient_addresses.txt` file."
@@ -423,6 +424,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     let file = OpenOptions::new()
                  .append(true)
                  .create(true)
+                 .read(true)
                  .open("efficient_addresses.txt")
                  .expect(
                    "Could not create or open `efficient_addresses.txt` file."
