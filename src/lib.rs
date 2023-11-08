@@ -548,6 +548,7 @@ fn output_file() -> File {
     OpenOptions::new()
         .append(true)
         .create(true)
+        .read(true)
         .open("efficient_addresses.txt")
         .expect("Could not create or open `efficient_addresses.txt` file.")
 }
