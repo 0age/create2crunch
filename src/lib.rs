@@ -7,7 +7,7 @@ pub use reward::Reward;
 use alloy_primitives::{hex, Address, FixedBytes};
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use console::Term;
-use fs2::FileExt;
+use fs4::FileExt;
 use ocl::{Buffer, Context, Device, MemFlags, Platform, ProQue, Program, Queue};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
