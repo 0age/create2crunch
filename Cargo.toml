@@ -1,6 +1,6 @@
 [package]
 name = "create2crunch"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["0age <0age@protonmail.com"]
 edition = "2021"
 rust-version = "1.65"
