@@ -275,7 +275,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     let term = Term::stdout();
 
     // set up a platform to use
-    let platform = Platform::default();
+    let platform = Platform::new(ocl::core::default_platform()?);
 
     // set up the device to use
     let device = Device::by_idx_wrap(platform, config.gpu_device as usize)?;
@@ -485,12 +485,13 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
             let solution = solution.to_le_bytes();
 
-            let mut solution_message = [0; 67];
+            let mut solution_message = [0; 85];
             solution_message[0] = CONTROL_CHARACTER;
             solution_message[1..21].copy_from_slice(&config.factory_address);
             solution_message[21..41].copy_from_slice(&config.calling_address);
             solution_message[41..45].copy_from_slice(&salt[..]);
-            solution_message[45..].copy_from_slice(&config.init_code_hash);
+            solution_message[45..53].copy_from_slice(&solution);
+            solution_message[53..].copy_from_slice(&config.init_code_hash);
 
             // create new hash object
             let mut hash = Keccak::v256();
