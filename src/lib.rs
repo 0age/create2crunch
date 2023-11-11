@@ -1,6 +1,8 @@
-#![warn(unused_crate_dependencies)]
+#![warn(unused_crate_dependencies, unreachable_pub)]
+#![deny(unused_must_use, rust_2018_idioms)]
 
 mod reward;
+pub use reward::Reward;
 
 use alloy_primitives::{hex, Address, FixedBytes};
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
@@ -146,7 +148,7 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
         .expect("Could not create or open `efficient_addresses.txt` file.");
 
     // create object for computing rewards (relative rarity) for a given address
-    let rewards = reward::Reward::new();
+    let rewards = Reward::new();
 
     // set "footer" of hash message using initialization code hash from config
     let footer: [u8; 32] = config.init_code_hash;
@@ -273,7 +275,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
         .expect("Could not create or open `efficient_addresses.txt` file.");
 
     // create object for computing rewards (relative rarity) for a given address
-    let rewards = reward::Reward::new();
+    let rewards = Reward::new();
 
     // track how many addresses have been found and information about them
     let mut found: u64 = 0;
