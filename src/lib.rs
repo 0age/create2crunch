@@ -1,9 +1,6 @@
 #![warn(unused_crate_dependencies, unreachable_pub)]
 #![deny(unused_must_use, rust_2018_idioms)]
 
-mod reward;
-pub use reward::Reward;
-
 use alloy_primitives::{hex, Address, FixedBytes};
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use console::Term;
@@ -12,11 +9,15 @@ use ocl::{Buffer, Context, Device, MemFlags, Platform, ProQue, Program, Queue};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 use std::error::Error;
-use std::fs::OpenOptions;
+use std::fmt::Write as _;
+use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 use terminal_size::{terminal_size, Height};
 use tiny_keccak::{Hasher, Keccak};
+
+mod reward;
+pub use reward::Reward;
 
 // workset size (tweak this!)
 const WORK_SIZE: u32 = 0x4000000; // max. 0x15400000 to abs. max 0xffffffff
@@ -141,17 +142,10 @@ impl Config {
 /// resultant address.
 pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
     // (create if necessary) and open a file where found salts will be written
-    let file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open("efficient_addresses.txt")
-        .expect("Could not create or open `efficient_addresses.txt` file.");
+    let file = output_file();
 
     // create object for computing rewards (relative rarity) for a given address
     let rewards = Reward::new();
-
-    // set "footer" of hash message using initialization code hash from config
-    let footer: [u8; 32] = config.init_code_hash;
 
     // begin searching for addresses
     loop {
@@ -180,7 +174,7 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
 
                 // update with body and footer (total: 38 bytes)
                 hash.update(salt_incremented_segment);
-                hash.update(&footer);
+                hash.update(&config.init_code_hash);
 
                 // hash the payload and get the result
                 let mut res: [u8; 32] = [0; 32];
@@ -268,11 +262,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     );
 
     // (create if necessary) and open a file where found salts will be written
-    let file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open("efficient_addresses.txt")
-        .expect("Could not create or open `efficient_addresses.txt` file.");
+    let file = output_file();
 
     // create object for computing rewards (relative rarity) for a given address
     let rewards = Reward::new();
@@ -296,38 +286,10 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
         .devices(device)
         .build()?;
 
-    // get factory, caller, and initialization code hash from config object
-    let factory = &config.factory_address;
-    let caller = &config.calling_address;
-    let init_hash = &config.init_code_hash;
-
-    // generate the kernel source code with the define macros
-    let kernel_src = &format!(
-        "{}\n{}\n{}\n#define LEADING_ZEROES {}\n#define TOTAL_ZEROES {}\n{}",
-        factory
-            .iter()
-            .enumerate()
-            .map(|(i, x)| format!("#define S_{} {}u\n", i + 1, x))
-            .collect::<String>(),
-        caller
-            .iter()
-            .enumerate()
-            .map(|(i, x)| format!("#define S_{} {}u\n", i + 21, x))
-            .collect::<String>(),
-        init_hash
-            .iter()
-            .enumerate()
-            .map(|(i, x)| format!("#define S_{} {}u\n", i + 53, x))
-            .collect::<String>(),
-        config.leading_zeroes_threshold,
-        config.total_zeroes_threshold,
-        KERNEL_SRC
-    );
-
     // set up the program to use
     let program = Program::builder()
         .devices(device)
-        .src(kernel_src)
+        .src(mk_kernel_src(&config))
         .build(&context)?;
 
     // set up the queue to use
@@ -525,10 +487,10 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
             let mut solution_message = [0; 67];
             solution_message[0] = CONTROL_CHARACTER;
-            solution_message[1..21].copy_from_slice(factory);
-            solution_message[21..41].copy_from_slice(caller);
+            solution_message[1..21].copy_from_slice(&config.factory_address);
+            solution_message[21..41].copy_from_slice(&config.calling_address);
             solution_message[41..45].copy_from_slice(&salt[..]);
-            solution_message[45..].copy_from_slice(init_hash);
+            solution_message[45..].copy_from_slice(&config.init_code_hash);
 
             // create new hash object
             let mut hash = Keccak::v256();
@@ -559,7 +521,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             let reward = rewards.get(&key).unwrap_or("0");
             let output = format!(
                 "0x{}{}{} => {} => {}",
-                hex::encode(caller),
+                hex::encode(config.calling_address),
                 hex::encode(salt),
                 hex::encode(solution),
                 address,
@@ -577,4 +539,35 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             found += 1;
         }
     }
+}
+
+#[track_caller]
+fn output_file() -> File {
+    OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("efficient_addresses.txt")
+        .expect("Could not create or open `efficient_addresses.txt` file.")
+}
+
+/// Creates the OpenCL kernel source code by populating the template with the
+/// values from the Config object.
+fn mk_kernel_src(config: &Config) -> String {
+    let mut src = String::with_capacity(2048 + KERNEL_SRC.len());
+
+    let factory = config.factory_address.iter();
+    let caller = config.calling_address.iter();
+    let hash = config.init_code_hash.iter();
+    let hash = hash.enumerate().map(|(i, x)| (i + 52, x));
+    for (i, x) in factory.chain(caller).enumerate().chain(hash) {
+        writeln!(src, "#define S_{} {}u", i + 1, x).unwrap();
+    }
+    let lz = config.leading_zeroes_threshold;
+    writeln!(src, "#define LEADING_ZEROES {lz}").unwrap();
+    let tz = config.total_zeroes_threshold;
+    writeln!(src, "#define TOTAL_ZEROES {tz}").unwrap();
+
+    src.push_str(KERNEL_SRC);
+
+    src
 }
