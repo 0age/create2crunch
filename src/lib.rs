@@ -8,6 +8,7 @@ use fs4::FileExt;
 use ocl::{Buffer, Context, Device, MemFlags, Platform, ProQue, Program, Queue};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
+use separator::Separatable;
 use std::error::Error;
 use std::fmt::Write as _;
 use std::fs::{File, OpenOptions};
@@ -410,7 +411,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                     total_runtime_mins,
                     total_runtime_secs,
                     cumulative_nonce,
-                    WORK_SIZE
+                    WORK_SIZE.separated_string(),
                 ))?;
 
                 // display information about the attempt rate and found solutions
