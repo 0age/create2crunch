@@ -6,8 +6,8 @@ edition = "2021"
 rust-version = "1.65"
 
 [dependencies]
-alloy-primitives = { version = "0.4", features = ["rand"] }
-byteorder = "1"
+alloy-primitives = { version = "0.5", features = ["rand"] }
+byteorder = "1.5"
 console = "0.15"
 fs4 = "0.7"
 ocl = "0.19"
@@ -24,3 +24,7 @@ lto = "fat"
 strip = true
 panic = "abort"
 codegen-units = 1
+
+[features]
+default = []
+asm = ["alloy-primitives/asm-keccak"]
