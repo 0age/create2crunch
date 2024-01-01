@@ -1,19 +1,30 @@
 [package]
 name = "create2crunch"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["0age <0age@protonmail.com"]
+edition = "2021"
+rust-version = "1.65"
 
 [dependencies]
-byteorder = "1"
-console = "0.7.5"
-fs2 = "0.4.3"
-hex = "0.3.2"
-itertools = "0.8.0"
+alloy-primitives = { version = "0.5", features = ["rand"] }
+byteorder = "1.5"
+console = "0.15"
+fs4 = "0.7"
 ocl = "0.19"
-ocl-extras = "0.1.1"
-rand = "0.3"
+rand = "0.8"
 rayon = "1.0"
-separator = "0.3.1"
-terminal_size = "0.1.8"
-tiny-keccak = "1.4.2"
-thiserror = "=1.0.48"
+rustc-hash = "1.1"
+separator = "0.4.1"
+terminal_size = "0.3.0"
+tiny-keccak = "2.0"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+strip = true
+panic = "abort"
+codegen-units = 1
+
+[features]
+default = []
+asm = ["alloy-primitives/asm-keccak"]
