@@ -30,6 +30,70 @@
 
 /******** Keccak-f[1600] (for finding efficient Ethereum addresses) ********/
 
+#ifndef LEADING_ZEROES
+# define LEADING_ZEROES 4
+#endif
+
+#ifndef TOTAL_ZEROES
+# define TOTAL_ZEROES 20
+#endif
+
+#ifndef S_1
+// all zeroes to ignore errors
+# define S_1 0x00u
+# define S_2 0x00u
+# define S_3 0x00u
+# define S_4 0x00u
+# define S_5 0x00u
+# define S_6 0x00u
+# define S_7 0x00u
+# define S_8 0x00u
+# define S_9 0x00u
+# define S_10 0x00u
+# define S_11 0x00u
+# define S_12 0x00u
+# define S_13 0x00u
+# define S_14 0x00u
+# define S_15 0x00u
+# define S_16 0x00u
+# define S_17 0x00u
+# define S_18 0x00u
+# define S_19 0x00u
+# define S_20 0x00u
+# define S_33 0x00u
+# define S_34 0x00u
+# define S_35 0x00u
+# define S_36 0x00u
+# define S_37 0x00u
+# define S_38 0x00u
+# define S_39 0x00u
+# define S_40 0x00u
+# define S_41 0x00u
+# define S_42 0x00u
+# define S_43 0x00u
+# define S_44 0x00u
+# define S_45 0x00u
+# define S_46 0x00u
+# define S_47 0x00u
+# define S_48 0x00u
+# define S_49 0x00u
+# define S_50 0x00u
+# define S_51 0x00u
+# define S_52 0x00u
+# define S_53 0x00u
+# define S_54 0x00u
+# define S_55 0x00u
+# define S_56 0x00u
+# define S_57 0x00u
+# define S_58 0x00u
+# define S_59 0x00u
+# define S_60 0x00u
+# define S_61 0x00u
+# define S_62 0x00u
+# define S_63 0x00u
+# define S_64 0x00u
+#endif
+
 #define OPENCL_PLATFORM_UNKNOWN 0
 #define OPENCL_PLATFORM_AMD   2
 
@@ -259,26 +323,26 @@ __kernel void hashMessage(
   sponge[18] = S_18;
   sponge[19] = S_19;
   sponge[20] = S_20;
-  sponge[21] = S_21;
-  sponge[22] = S_22;
-  sponge[23] = S_23;
-  sponge[24] = S_24;
-  sponge[25] = S_25;
-  sponge[26] = S_26;
-  sponge[27] = S_27;
-  sponge[28] = S_28;
-  sponge[29] = S_29;
-  sponge[30] = S_30;
-  sponge[31] = S_31;
-  sponge[32] = S_32;
-  sponge[33] = S_33;
-  sponge[34] = S_34;
-  sponge[35] = S_35;
-  sponge[36] = S_36;
-  sponge[37] = S_37;
-  sponge[38] = S_38;
-  sponge[39] = S_39;
-  sponge[40] = S_40;
+  sponge[21] = 0;
+  sponge[22] = 0;
+  sponge[23] = 0;
+  sponge[24] = 0;
+  sponge[25] = 0;
+  sponge[26] = 0;
+  sponge[27] = 0;
+  sponge[28] = 0;
+  sponge[29] = 0;
+  sponge[30] = 0;
+  sponge[31] = 0;
+  sponge[32] = 0;
+  sponge[33] = 0;
+  sponge[34] = 0;
+  sponge[35] = 0;
+  sponge[36] = 0;
+  sponge[37] = 0;
+  sponge[38] = 0;
+  sponge[39] = 0;
+  sponge[40] = 0;
 
   sponge[41] = d_message[0];
   sponge[42] = d_message[1];
@@ -299,38 +363,38 @@ __kernel void hashMessage(
   sponge[51] = nonce.uint8_t[6];
   sponge[52] = nonce.uint8_t[7];
 
-  sponge[53] = S_53;
-  sponge[54] = S_54;
-  sponge[55] = S_55;
-  sponge[56] = S_56;
-  sponge[57] = S_57;
-  sponge[58] = S_58;
-  sponge[59] = S_59;
-  sponge[60] = S_60;
-  sponge[61] = S_61;
-  sponge[62] = S_62;
-  sponge[63] = S_63;
-  sponge[64] = S_64;
-  sponge[65] = S_65;
-  sponge[66] = S_66;
-  sponge[67] = S_67;
-  sponge[68] = S_68;
-  sponge[69] = S_69;
-  sponge[70] = S_70;
-  sponge[71] = S_71;
-  sponge[72] = S_72;
-  sponge[73] = S_73;
-  sponge[74] = S_74;
-  sponge[75] = S_75;
-  sponge[76] = S_76;
-  sponge[77] = S_77;
-  sponge[78] = S_78;
-  sponge[79] = S_79;
-  sponge[80] = S_80;
-  sponge[81] = S_81;
-  sponge[82] = S_82;
-  sponge[83] = S_83;
-  sponge[84] = S_84;
+  sponge[53] = S_33;
+  sponge[54] = S_34;
+  sponge[55] = S_35;
+  sponge[56] = S_36;
+  sponge[57] = S_37;
+  sponge[58] = S_38;
+  sponge[59] = S_39;
+  sponge[60] = S_40;
+  sponge[61] = S_41;
+  sponge[62] = S_42;
+  sponge[63] = S_43;
+  sponge[64] = S_44;
+  sponge[65] = S_45;
+  sponge[66] = S_46;
+  sponge[67] = S_47;
+  sponge[68] = S_48;
+  sponge[69] = S_49;
+  sponge[70] = S_50;
+  sponge[71] = S_51;
+  sponge[72] = S_52;
+  sponge[73] = S_53;
+  sponge[74] = S_54;
+  sponge[75] = S_55;
+  sponge[76] = S_56;
+  sponge[77] = S_57;
+  sponge[78] = S_58;
+  sponge[79] = S_59;
+  sponge[80] = S_60;
+  sponge[81] = S_61;
+  sponge[82] = S_62;
+  sponge[83] = S_63;
+  sponge[84] = S_64;
 
   // begin padding based on message length
   sponge[85] = 0x01u;
@@ -348,15 +412,34 @@ __kernel void hashMessage(
   for (int i = 136; i < 200; ++i)
     sponge[i] = 0;
 
-  // Apply keccakf
+  keccakf(spongeBuffer);
+
+  sponge[0] = 0xd6u;
+  sponge[1] = 0x94u;
+  #pragma unroll
+  for (int i = 12; i < 42; ++i)
+    sponge[i - 10] = sponge[i];
+  sponge[22] = 0x01u; // nonce
+  sponge[23] = 0x01u; // padding
+
+#pragma unroll
+  for (int i = 24; i < 135; ++i)
+  sponge[i] = 0;
+
+  sponge[135] = 0x80u;
+
+#pragma unroll
+  for (int i = 136; i < 200; ++i)
+    sponge[i] = 0;
+
   keccakf(spongeBuffer);
 
   // determine if the address meets the constraints
   if (
     hasLeading(digest) 
-#if TOTAL_ZEROES <= 20
-    || hasTotal(digest)
-#endif
+// #if TOTAL_ZEROES <= 20
+//     || hasTotal(digest)
+// #endif
   ) {
     // To be honest, if we are using OpenCL, 
     // we just need to write one solution for all practical purposes,
