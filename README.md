@@ -5,7 +5,7 @@
 Provide three arguments: a factory address (or contract that will call CREATE2), a caller address (for factory addresses that require it as a protection against frontrunning), and the keccak-256 hash of the initialization code of the contract that the factory will deploy. 
 (The example below references the `Create2Factory`'s address on one of the 21 chains where it has been deployed to.)
 
-Live `Create2Factory` contracts can be found [here](https://blockscan.com/address/0x0000000000ffe8b47b3e2130213b802212439497).
+Live `Create2Factory` contracts can be found [here](https://contractscan.xyz/contract/0x0000000000ffe8b47b3e2130213b802212439497).
 
 ```sh
 $ git clone https://github.com/0age/create2crunch
