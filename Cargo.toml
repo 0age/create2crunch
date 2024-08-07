@@ -18,6 +18,10 @@ separator = "0.4.1"
 terminal_size = "0.3.0"
 tiny-keccak = "2.0"
 
+[[bin]]
+name = "vanity_filter"
+path = "src/bin/vanity_filter.rs"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
