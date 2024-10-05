@@ -1,4 +1,8 @@
 /target
 **/*.rs.bk
 .DS_Store
+
+# Output files
 efficient_addresses.txt
+efficient_addresses.*.txt
+address_per_contracts.txt

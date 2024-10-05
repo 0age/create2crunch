@@ -1,0 +1,26 @@
+# Directory containing the creation code of the contracts
+bin_folder = "./bin"
+
+# Address of the factory contract
+factory_address = "0x4e59b44847b379578588920cA78FbF26c0B4956C"
+
+# Address of the wallet that will call the contracts
+calling_address = "0xaE4e57b886541829BA70eFC84340653c41e2908C"
+
+# GPU device to use (none or 255 for cpu usage)
+gpu_device = 0
+
+# First target
+[[targets]]
+# Name of the contract in the bin folder
+name = "contract1.bin"
+# Meaning that other bin with the placeholder `${ROOT_CONTRACT}` will be replaced with the computed address of this contract
+placeholder_name = "ROOT_CONTRACT"
+# Stop threshold for this contract, once an address match either of this target it will stop and move on to the next target
+stop_thresholds = { leading_zeroes = 3, total_zeroes = 5 }
+
+# Second target
+[[targets]]
+# Since `contract1` export the `ROOT_CONTRACT` placeholder, this target can contain a `${ROOT_CONTRACT}` arguments in it's bin
+name = "contract2.bin"
+stop_thresholds = { leading_zeroes = 3, total_zeroes = 5 }

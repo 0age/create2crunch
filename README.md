@@ -7,6 +7,10 @@ Provide three arguments: a factory address (or contract that will call CREATE2),
 
 Live `Create2Factory` contracts can be found [here](https://blockscan.com/address/0x0000000000ffe8b47b3e2130213b802212439497).
 
+## Usage
+
+## Cli
+
 ```sh
 $ git clone https://github.com/0age/create2crunch
 $ cd create2crunch
@@ -15,6 +19,24 @@ $ export CALLER="<YOUR_DEPLOYER_ADDRESS_OF_CHOICE_GOES_HERE>"
 $ export INIT_CODE_HASH="<HASH_OF_YOUR_CONTRACT_INIT_CODE_GOES_HERE>"
 $ cargo run --release $FACTORY $CALLER $INIT_CODE_HASH
 ```
+
+## Config
+
+1. Create a bin folder at the root of the project
+2. Move each one of your smart contracts creation code to a file in the bin folder
+3. If your contracts require constructor args, and it's one of the other contracts to be determined, you can put placeholder value in place, it will be automatically replaced by the actual value
+4. Create your toml config based on the example `config.example.toml`
+5. Run it
+```sh
+$ git clone https://github.com/0age/create2crunch
+$ cd create2crunch
+$ cargo run --release config.toml
+```
+
+You will have a multiple file outputs:
+- `efficient_addresses.{contract_name}.txt` contains the addresses that are gas efficient for the given contract name
+- `address_per_contracts.txt` contains the final output of all the addresses found for each contract
+
 
 For each efficient address found, the salt, resultant addresses, and value *(i.e. approximate rarity)* will be written to `efficient_addresses.txt`. Verify that one of the salts actually results in the intended address before getting in too deep - ideally, the CREATE2 factory will have a view method for checking what address you'll get for submitting a particular salt. Be sure not to change the factory address or the init code without first removing any existing data to prevent the two salt types from becoming commingled. There's also a *very* simple monitoring tool available if you run `$python3 analysis.py` in another tab.
 

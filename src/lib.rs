@@ -20,6 +20,13 @@ use tiny_keccak::{Hasher, Keccak};
 mod reward;
 pub use reward::Reward;
 
+mod config_args;
+pub use config_args::CliArgsConfig;
+mod config_file;
+pub use config_file::ConfigFile;
+mod process_config;
+pub use process_config::process_config;
+
 // workset size (tweak this!)
 const WORK_SIZE: u32 = 0x4000000; // max. 0x15400000 to abs. max 0xffffffff
 
@@ -29,102 +36,21 @@ const MAX_INCREMENTER: u64 = 0xffffffffffff;
 
 static KERNEL_SRC: &str = include_str!("./kernels/keccak256.cl");
 
-/// Requires three hex-encoded arguments: the address of the contract that will
-/// be calling CREATE2, the address of the caller of said contract *(assuming
-/// the contract calling CREATE2 has frontrunning protection in place - if not
-/// applicable to your use-case you can set it to the null address)*, and the
-/// keccak-256 hash of the bytecode that is provided by the contract calling
-/// CREATE2 that will be used to initialize the new contract. An additional set
-/// of three optional values may be provided: a device to target for OpenCL GPU
-/// search, a threshold for leading zeroes to search for, and a threshold for
-/// total zeroes to search for.
-pub struct Config {
+pub struct RunConfig {
     pub factory_address: [u8; 20],
     pub calling_address: [u8; 20],
     pub init_code_hash: [u8; 32],
-    pub gpu_device: u8,
     pub leading_zeroes_threshold: u8,
     pub total_zeroes_threshold: u8,
+    pub early_stop: bool,
 }
 
-/// Validate the provided arguments and construct the Config struct.
-impl Config {
-    pub fn new(mut args: std::env::Args) -> Result<Self, &'static str> {
-        // get args, skipping first arg (program name)
-        args.next();
-
-        let Some(factory_address_string) = args.next() else {
-            return Err("didn't get a factory_address argument");
-        };
-        let Some(calling_address_string) = args.next() else {
-            return Err("didn't get a calling_address argument");
-        };
-        let Some(init_code_hash_string) = args.next() else {
-            return Err("didn't get an init_code_hash argument");
-        };
-
-        let gpu_device_string = match args.next() {
-            Some(arg) => arg,
-            None => String::from("255"), // indicates that CPU will be used.
-        };
-        let leading_zeroes_threshold_string = match args.next() {
-            Some(arg) => arg,
-            None => String::from("3"),
-        };
-        let total_zeroes_threshold_string = match args.next() {
-            Some(arg) => arg,
-            None => String::from("5"),
-        };
-
-        // convert main arguments from hex string to vector of bytes
-        let Ok(factory_address_vec) = hex::decode(factory_address_string) else {
-            return Err("could not decode factory address argument");
-        };
-        let Ok(calling_address_vec) = hex::decode(calling_address_string) else {
-            return Err("could not decode calling address argument");
-        };
-        let Ok(init_code_hash_vec) = hex::decode(init_code_hash_string) else {
-            return Err("could not decode initialization code hash argument");
-        };
-
-        // convert from vector to fixed array
-        let Ok(factory_address) = factory_address_vec.try_into() else {
-            return Err("invalid length for factory address argument");
-        };
-        let Ok(calling_address) = calling_address_vec.try_into() else {
-            return Err("invalid length for calling address argument");
-        };
-        let Ok(init_code_hash) = init_code_hash_vec.try_into() else {
-            return Err("invalid length for initialization code hash argument");
-        };
-
-        // convert gpu arguments to u8 values
-        let Ok(gpu_device) = gpu_device_string.parse::<u8>() else {
-            return Err("invalid gpu device value");
-        };
-        let Ok(leading_zeroes_threshold) = leading_zeroes_threshold_string.parse::<u8>() else {
-            return Err("invalid leading zeroes threshold value supplied");
-        };
-        let Ok(total_zeroes_threshold) = total_zeroes_threshold_string.parse::<u8>() else {
-            return Err("invalid total zeroes threshold value supplied");
-        };
-
-        if leading_zeroes_threshold > 20 {
-            return Err("invalid value for leading zeroes threshold argument. (valid: 0..=20)");
-        }
-        if total_zeroes_threshold > 20 && total_zeroes_threshold != 255 {
-            return Err("invalid value for total zeroes threshold argument. (valid: 0..=20 | 255)");
-        }
-
-        Ok(Self {
-            factory_address,
-            calling_address,
-            init_code_hash,
-            gpu_device,
-            leading_zeroes_threshold,
-            total_zeroes_threshold,
-        })
-    }
+pub struct SaltSearchResult {
+    pub salt: String,
+    pub address: Address,
+    pub reward: String,
+    pub leading: usize,
+    pub total: usize,
 }
 
 /// Given a Config object with a factory address, a caller address, and a
@@ -141,12 +67,15 @@ impl Config {
 /// address is found, it will be appended to `efficient_addresses.txt` along
 /// with the resultant address and the "value" (i.e. approximate rarity) of the
 /// resultant address.
-pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
+pub fn cpu(config: RunConfig) -> Result<Vec<SaltSearchResult>, Box<dyn Error>> {
     // (create if necessary) and open a file where found salts will be written
     let file = output_file();
 
     // create object for computing rewards (relative rarity) for a given address
     let rewards = Reward::new();
+
+    // track how many addresses have been found and information about them
+    let mut found_results: Vec<SaltSearchResult> = vec![];
 
     // begin searching for addresses
     loop {
@@ -164,9 +93,9 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
         hash_header.update(&header);
 
         // iterate over a 6-byte nonce and compute each address
-        (0..MAX_INCREMENTER)
+        let run_results = (0..MAX_INCREMENTER)
             .into_par_iter() // parallelization
-            .for_each(|salt| {
+            .map(|salt| {
                 let salt = salt.to_le_bytes();
                 let salt_incremented_segment = &salt[..6];
 
@@ -196,9 +125,12 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                // only proceed if there are at least three zero bytes
-                if total < 3 {
-                    return;
+                // only proceed if the number of zero bytes match the threshold
+                if total < config.total_zeroes_threshold as usize
+                    || leading == 21
+                    || leading < config.leading_zeroes_threshold as usize
+                {
+                    return None;
                 }
 
                 // look up the reward amount
@@ -207,7 +139,7 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
 
                 // only proceed if an efficient address has been found
                 if reward_amount.is_none() {
-                    return;
+                    return None;
                 }
 
                 // get the full salt used to create the address
@@ -217,7 +149,7 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
 
                 // display the salt and the address.
                 let output = format!(
-                    "{full_salt} => {address} => {}",
+                    "{full_salt} => {address} => {} ({leading} / {total})",
                     reward_amount.unwrap_or("0")
                 );
                 println!("{output}");
@@ -230,8 +162,27 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
                     .expect("Couldn't write to `efficient_addresses.txt` file.");
 
                 // release the file lock
-                file.unlock().expect("Couldn't unlock file.")
+                file.unlock().expect("Couldn't unlock file.");
+
+                return Some(SaltSearchResult {
+                    salt: full_salt,
+                    address: *address,
+                    reward: reward_amount.unwrap_or("0").to_string(),
+                    leading,
+                    total,
+                });
             });
+
+        // collect the results
+        let run_results: Vec<SaltSearchResult> = run_results.filter_map(|x| x).collect();
+
+        // append the results to the found results
+        found_results.extend(run_results);
+
+        // If early stop is enabled, return after finding the first address
+        if config.early_stop && !found_results.is_empty() {
+            return Ok(found_results);
+        }
     }
 }
 
@@ -256,10 +207,10 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
 ///
 /// This method is still highly experimental and could almost certainly use
 /// further optimization - contributions are more than welcome!
-pub fn gpu(config: Config) -> ocl::Result<()> {
+pub fn gpu(config: RunConfig, gpu_device: u8) -> ocl::Result<Vec<SaltSearchResult>> {
     println!(
         "Setting up experimental OpenCL miner using device {}...",
-        config.gpu_device
+        gpu_device
     );
 
     // (create if necessary) and open a file where found salts will be written
@@ -271,6 +222,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     // track how many addresses have been found and information about them
     let mut found: u64 = 0;
     let mut found_list: Vec<String> = vec![];
+    let mut found_results: Vec<SaltSearchResult> = vec![];
 
     // set up a controller for terminal output
     let term = Term::stdout();
@@ -279,7 +231,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
     let platform = Platform::new(ocl::core::default_platform()?);
 
     // set up the device to use
-    let device = Device::by_idx_wrap(platform, config.gpu_device as usize)?;
+    let device = Device::by_idx_wrap(platform, gpu_device as usize)?;
 
     // set up the context to use
     let context = Context::builder()
@@ -533,12 +485,31 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
             let show = format!("{output} ({leading} / {total})");
             found_list.push(show.to_string());
 
+            // push our salt search result
+            found_results.push(SaltSearchResult {
+                salt: format!(
+                    "0x{}{}{}",
+                    hex::encode(config.calling_address),
+                    hex::encode(salt),
+                    hex::encode(solution)
+                ),
+                address: *address,
+                reward: reward.to_string(),
+                leading,
+                total,
+            });
+
             file.lock_exclusive().expect("Couldn't lock file.");
 
             writeln!(&file, "{output}").expect("Couldn't write to `efficient_addresses.txt` file.");
 
             file.unlock().expect("Couldn't unlock file.");
             found += 1;
+
+            // If early stop is enabled, return after finding the first address
+            if config.early_stop {
+                return Ok(found_results);
+            }
         }
     }
 }
@@ -555,7 +526,7 @@ fn output_file() -> File {
 
 /// Creates the OpenCL kernel source code by populating the template with the
 /// values from the Config object.
-fn mk_kernel_src(config: &Config) -> String {
+fn mk_kernel_src(config: &RunConfig) -> String {
     let mut src = String::with_capacity(2048 + KERNEL_SRC.len());
 
     let factory = config.factory_address.iter();
