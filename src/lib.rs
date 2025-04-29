@@ -230,7 +230,7 @@ pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
                     .expect("Couldn't write to `efficient_addresses.txt` file.");
 
                 // release the file lock
-                file.unlock().expect("Couldn't unlock file.")
+                FileExt::unlock(&file).expect("Couldn't unlock file.");
             });
     }
 }
@@ -537,7 +537,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
 
             writeln!(&file, "{output}").expect("Couldn't write to `efficient_addresses.txt` file.");
 
-            file.unlock().expect("Couldn't unlock file.");
+            FileExt::unlock(&file).expect("Couldn't unlock file.");
             found += 1;
         }
     }
