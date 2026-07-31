@@ -23,7 +23,7 @@ pub use reward::Reward;
 // workset size (tweak this!)
 const WORK_SIZE: u32 = 0x4000000; // max. 0x15400000 to abs. max 0xffffffff
 
-const WORK_FACTOR: u128 = (WORK_SIZE as u128) / 1_000_000;
+const WORK_FACTOR: f64 = (WORK_SIZE as f64) / 1_000_000.0;
 const CONTROL_CHARACTER: u8 = 0xff;
 const MAX_INCREMENTER: u64 = 0xffffffffffff;
 
@@ -392,7 +392,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                     - (total_runtime_mins * 60) as f64;
 
                 // determine the number of attempts being made per second
-                let work_rate: u128 = WORK_FACTOR * cumulative_nonce as u128;
+                let work_rate: f64 = WORK_FACTOR * cumulative_nonce as f64;
                 if total_runtime > 0.0 {
                     rate = 1.0 / total_runtime;
                 }
@@ -418,7 +418,7 @@ pub fn gpu(config: Config) -> ocl::Result<()> {
                 term.write_line(&format!(
                     "rate: {:.2} million attempts per second\t\t\t\
                      total found this run: {}",
-                    work_rate as f64 * rate,
+                    work_rate * rate,
                     found
                 ))?;
 
